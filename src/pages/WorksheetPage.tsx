@@ -228,7 +228,7 @@ const WorksheetPage: React.FC = () => {
           
           console.log('🔍 [DEBUG] About to save state to sessionStorage:', stateToSave);
           
-            setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
+          try {
             sessionStorage.setItem(sessionKey, JSON.stringify(stateToSave));
             console.log('🔍 [DEBUG] Successfully saved state to sessionStorage with key:', sessionKey);
             
@@ -304,6 +304,7 @@ const WorksheetPage: React.FC = () => {
     // Update guidance state and save to session storage
     if (id && n && worksheetData?.meta?.mode === 'auto' && 'data' in worksheetData.meta) {
       const sessionKey = `worksheet_page_state_${id}_${n}`;
+      const pageIndex = parseInt(n, 10);
       const pageData = worksheetData.meta.data.find(page => page.page_number === pageIndex);
       
       if (pageData && guidance) {
@@ -361,7 +362,8 @@ const WorksheetPage: React.FC = () => {
         }
       }
     }
-  }, [id, n, pageIndex, worksheetData, allRegionsState, allGuidanceState]);
+  }, [id, n, worksheetData, allRegionsState, allGuidanceState]);
+
   if (!id || !n) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
