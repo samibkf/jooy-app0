@@ -13,9 +13,32 @@ export interface RegionData {
   created_at: string;
 }
 
-export interface WorksheetMetadata {
+export interface GuidanceItem {
+  title: string;
+  description: string[];
+  audioName: string;
+}
+
+export interface AutoModePageData {
+  page_number: number;
+  page_description: string;
+  guidance: GuidanceItem[];
+}
+
+export interface RegionsModeMetadata {
+  mode?: "regions";
   documentName: string;
   documentId: string;
   regions: RegionData[];
   drmProtectedPages: number[] | boolean;
 }
+
+export interface AutoModeMetadata {
+  mode: "auto";
+  documentName: string;
+  documentId: string;
+  drmProtectedPages: number[] | boolean;
+  data: AutoModePageData[];
+}
+
+export type WorksheetMetadata = RegionsModeMetadata | AutoModeMetadata;

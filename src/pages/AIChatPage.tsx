@@ -14,7 +14,7 @@ import { ChevronLeft, Send, Loader2, User, Bot } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { getTextDirection } from "@/lib/textDirection";
 import SwitchModeButton from "@/components/SwitchModeButton";
-import type { RegionData, WorksheetMetadata } from "@/types/worksheet";
+import type { RegionData, WorksheetMetadata, GuidanceItem } from "@/types/worksheet";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
@@ -35,6 +35,8 @@ const AIChatPage: React.FC = () => {
     fromTextMode?: boolean;
     activeRegion?: RegionData;
     currentStepIndex?: number;
+    activeGuidance?: GuidanceItem;
+    currentGuidanceStepIndex?: number;
     pdfUrl?: string;
     worksheetMeta?: WorksheetMetadata;
   } | null;
@@ -42,6 +44,8 @@ const AIChatPage: React.FC = () => {
   const fromTextMode = locationState?.fromTextMode || false;
   const activeRegion = locationState?.activeRegion;
   const currentStepIndex = locationState?.currentStepIndex || 0;
+  const activeGuidance = locationState?.activeGuidance;
+  const currentGuidanceStepIndex = locationState?.currentGuidanceStepIndex || 0;
   const pdfUrl = locationState?.pdfUrl;
   const worksheetMeta = locationState?.worksheetMeta;
   
@@ -317,8 +321,25 @@ Analyze the student's question carefully. If they're asking for a specific works
       parsedState: currentSessionState ? JSON.parse(currentSessionState) : null
     });
     
-    // Navigate back to worksheet without any state - this will show the main PDF view
-    navigate(`/worksheet/${worksheetId}/${pageNumber}`);
+    // Navigate back to worksheet with appropriate state based on mode
+    if (worksheetMeta?.mode === 'auto' && activeGuidance) {
+      navigate(`/worksheet/${worksheetId}/${pageNumber}`, {
+        state: {
+          initialActiveGuidance: activeGuidance,
+          initialGuidanceStepIndex: currentGuidanceStepIndex
+        }
+      });
+    } else if (activeRegion) {
+      navigate(`/worksheet/${worksheetId}/${pageNumber}`, {
+        state: {
+          initialActiveRegion: activeRegion,
+          initialCurrentStepIndex: currentStepIndex
+        }
+      });
+    } else {
+      // Navigate back to worksheet without any state - this will show the main view
+      navigate(`/worksheet/${worksheetId}/${pageNumber}`);
+    }
   };
 
   // Show loading while i18next is initializing
@@ -502,8 +523,8 @@ Analyze the student's question carefully. If they're asking for a specific works
           worksheetId={worksheetId!} 
           pageNumber={parseInt(pageNumber!)} 
           shouldDisplay={true}
-          initialActiveRegion={activeRegion}
-          initialCurrentStepIndex={currentStepIndex}
+          initialActiveRegion={worksheetMeta?.mode === 'auto' ? undefined : activeRegion}
+          initialCurrentStepIndex={worksheetMeta?.mode === 'auto' ? currentGuidanceStepIndex : currentStepIndex}
         />
       )}
     </div>

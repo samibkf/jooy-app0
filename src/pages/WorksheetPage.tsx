@@ -2,18 +2,25 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import WorksheetViewer from "@/components/WorksheetViewer";
+import AutoModeContentDisplay from "@/components/AutoModeContentDisplay";
 import AIChatButton from "@/components/AIChatButton";
 import { Button } from "@/components/ui/button";
 import { useWorksheetData } from "@/hooks/useWorksheetData";
-import type { RegionData } from "@/types/worksheet";
+import type { RegionData, GuidanceItem, AutoModePageData } from "@/types/worksheet";
 
 interface StoredRegionData {
   currentStepIndex: number;
 }
 
+interface StoredGuidanceData {
+  currentStepIndex: number;
+}
+
 interface SessionPageData {
   lastActiveRegionId: string | null;
+  lastActiveGuidanceIndex: number | null;
   regions: Record<string, StoredRegionData>;
+  guidance: Record<number, StoredGuidanceData>;
 }
 
 const WorksheetPage: React.FC = () => {
@@ -25,14 +32,21 @@ const WorksheetPage: React.FC = () => {
   const [isTextModeActive, setIsTextModeActive] = useState(false);
   const [currentActiveRegion, setCurrentActiveRegion] = useState<RegionData | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
+  const [currentActiveGuidance, setCurrentActiveGuidance] = useState<GuidanceItem | null>(null);
+  const [currentGuidanceStepIndex, setCurrentGuidanceStepIndex] = useState<number>(0);
   const [allRegionsState, setAllRegionsState] = useState<Record<string, StoredRegionData>>({});
+  const [allGuidanceState, setAllGuidanceState] = useState<Record<number, StoredGuidanceData>>({});
   const [initialActiveRegion, setInitialActiveRegion] = useState<RegionData | null>(null);
   const [initialCurrentStepIndex, setInitialCurrentStepIndex] = useState<number>(0);
+  const [initialActiveGuidance, setInitialActiveGuidance] = useState<GuidanceItem | null>(null);
+  const [initialGuidanceStepIndex, setInitialGuidanceStepIndex] = useState<number>(0);
   
   // Get initial state from navigation (when returning from AI chat)
   const locationState = location.state as { 
     initialActiveRegion?: RegionData; 
     initialCurrentStepIndex?: number; 
+    initialActiveGuidance?: GuidanceItem;
+    initialGuidanceStepIndex?: number;
   } | null;
   
   // Fetch worksheet data once at the page level
@@ -178,13 +192,20 @@ const WorksheetPage: React.FC = () => {
           console.log('🔍 [DEBUG] Updated region state for:', region.id, 'with stepIndex:', stepIndex);
           
           const stateToSave: SessionPageData = {
+          setAllGuidanceState(parsedState.guidance || {});
             lastActiveRegionId: region.id,
+            lastActiveGuidanceIndex: null,
             regions: updatedAllRegionsState
+            guidance: allGuidanceState
           };
           
           console.log('🔍 [DEBUG] About to save state to sessionStorage:', stateToSave);
           
           try {
+          } else if (locationState?.initialActiveGuidance) {
+            console.log('🔍 [DEBUG] Using location state - initialActiveGuidance:', locationState.initialActiveGuidance);
+            setInitialActiveGuidance(locationState.initialActiveGuidance);
+            setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
             sessionStorage.setItem(sessionKey, JSON.stringify(stateToSave));
             console.log('🔍 [DEBUG] Successfully saved state to sessionStorage with key:', sessionKey);
             
@@ -196,6 +217,16 @@ const WorksheetPage: React.FC = () => {
           }
           
           console.log('🔍 [DEBUG] Returning updated allRegionsState:', updatedAllRegionsState);
+          } else if (parsedState.lastActiveGuidanceIndex !== null && worksheetData?.meta?.mode === 'auto' && 'data' in worksheetData.meta) {
+            // Find the last active guidance from the stored data (only for auto mode)
+            const pageData = worksheetData.meta.data.find(page => page.page_number === pageIndex);
+            if (pageData && pageData.guidance[parsedState.lastActiveGuidanceIndex]) {
+              const lastActiveGuidance = pageData.guidance[parsedState.lastActiveGuidanceIndex];
+              const guidanceState = parsedState.guidance[parsedState.lastActiveGuidanceIndex];
+              console.log('🔍 [DEBUG] Found last active guidance:', parsedState.lastActiveGuidanceIndex, 'with state:', guidanceState);
+              setInitialActiveGuidance(lastActiveGuidance);
+              setInitialGuidanceStepIndex(guidanceState?.currentStepIndex || 0);
+            }
           return updatedAllRegionsState;
         } else {
           // When no active region, check if we need to update sessionStorage
@@ -211,7 +242,9 @@ const WorksheetPage: React.FC = () => {
             if (currentSessionData?.lastActiveRegionId !== null) {
               const stateToSave: SessionPageData = {
                 lastActiveRegionId: null,
+                lastActiveGuidanceIndex: null,
                 regions: currentAllRegionsState
+                guidance: allGuidanceState
               };
               
               console.log('🔍 [DEBUG] About to save state (no active region) to sessionStorage:', stateToSave);
@@ -228,15 +261,106 @@ const WorksheetPage: React.FC = () => {
           } catch (error) {
             console.warn('🔍 [DEBUG] Failed to update session state:', error);
           }
+          setAllGuidanceState({});
           
           console.log('🔍 [DEBUG] Returning unchanged allRegionsState:', currentAllRegionsState);
+        setAllGuidanceState({});
           // Return the same object reference to prevent unnecessary re-renders
+          } else if (locationState?.initialActiveGuidance) {
+            console.log('🔍 [DEBUG] Using location state (no session) - initialActiveGuidance:', locationState.initialActiveGuidance);
+            setInitialActiveGuidance(locationState.initialActiveGuidance);
+            setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
           return currentAllRegionsState;
+        } else if (locationState?.initialActiveGuidance) {
+          console.log('🔍 [DEBUG] Using location state (error fallback) - initialActiveGuidance:', locationState.initialActiveGuidance);
+          setInitialActiveGuidance(locationState.initialActiveGuidance);
+          setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
         }
       });
     }
   }, [id, n]); // Only depend on id and n, which are stable
 
+  // Handle guidance state changes for Auto Mode
+  const handleGuidanceStateChange = useCallback((guidance: GuidanceItem | null, stepIndex: number) => {
+    console.log('🔍 [DEBUG] handleGuidanceStateChange called with guidance:', guidance?.title, 'stepIndex:', stepIndex);
+    
+    setCurrentActiveGuidance(prevGuidance => {
+      const guidanceChanged = prevGuidance?.title !== guidance?.title;
+      if (guidanceChanged) {
+        console.log('🔍 [DEBUG] Guidance changed from', prevGuidance?.title, 'to', guidance?.title);
+      }
+      return guidanceChanged ? guidance : prevGuidance;
+    });
+    
+    setCurrentGuidanceStepIndex(prevStepIndex => {
+      const stepChanged = prevStepIndex !== stepIndex;
+      if (stepChanged) {
+        console.log('🔍 [DEBUG] Guidance step index changed from', prevStepIndex, 'to', stepIndex);
+      }
+      return stepChanged ? stepIndex : prevStepIndex;
+    });
+    
+    // Update guidance state and save to session storage
+    if (id && n && worksheetData?.meta?.mode === 'auto' && 'data' in worksheetData.meta) {
+      const sessionKey = `worksheet_page_state_${id}_${n}`;
+      const pageData = worksheetData.meta.data.find(page => page.page_number === pageIndex);
+      
+      if (pageData && guidance) {
+        const guidanceIndex = pageData.guidance.findIndex(g => g.title === guidance.title);
+        
+        if (guidanceIndex !== -1) {
+          setAllGuidanceState(currentAllGuidanceState => {
+            const updatedAllGuidanceState = {
+              ...currentAllGuidanceState,
+              [guidanceIndex]: {
+                currentStepIndex: stepIndex
+              }
+            };
+            
+            const stateToSave: SessionPageData = {
+              lastActiveRegionId: null,
+              lastActiveGuidanceIndex: guidanceIndex,
+              regions: allRegionsState,
+              guidance: updatedAllGuidanceState
+            };
+            
+            try {
+              sessionStorage.setItem(sessionKey, JSON.stringify(stateToSave));
+              console.log('🔍 [DEBUG] Successfully saved guidance state to sessionStorage');
+            } catch (error) {
+              console.warn('🔍 [DEBUG] Failed to save guidance state to session:', error);
+            }
+            
+            return updatedAllGuidanceState;
+          });
+        }
+      } else if (!guidance) {
+        // Clear active guidance
+        try {
+          const currentStoredState = sessionStorage.getItem(sessionKey);
+          let currentSessionData: SessionPageData | null = null;
+          
+          if (currentStoredState) {
+            currentSessionData = JSON.parse(currentStoredState);
+          }
+          
+          if (currentSessionData?.lastActiveGuidanceIndex !== null) {
+            const stateToSave: SessionPageData = {
+              lastActiveRegionId: null,
+              lastActiveGuidanceIndex: null,
+              regions: allRegionsState,
+              guidance: allGuidanceState
+            };
+            
+            sessionStorage.setItem(sessionKey, JSON.stringify(stateToSave));
+            console.log('🔍 [DEBUG] Successfully cleared active guidance in session');
+          }
+        } catch (error) {
+          console.warn('🔍 [DEBUG] Failed to update guidance session state:', error);
+        }
+      }
+    }
+  }, [id, n, pageIndex, worksheetData, allRegionsState, allGuidanceState]);
   if (!id || !n) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -292,25 +416,46 @@ const WorksheetPage: React.FC = () => {
     );
   }
 
+  // Get the current page data for Auto Mode
+  const getCurrentPageData = (): AutoModePageData | null => {
+    if (worksheetData?.meta?.mode === 'auto' && 'data' in worksheetData.meta) {
+      return worksheetData.meta.data.find(page => page.page_number === pageIndex) || null;
+    }
+    return null;
+  };
+
+  const currentPageData = getCurrentPageData();
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <WorksheetViewer 
-        worksheetId={id} 
-        pageIndex={pageIndex} 
-        worksheetMeta={worksheetData.meta}
-        pdfUrl={worksheetData.pdfUrl}
-        onTextModeChange={setIsTextModeActive}
-        initialActiveRegion={initialActiveRegion}
-        initialCurrentStepIndex={initialCurrentStepIndex}
-        onRegionStateChange={handleRegionStateChange}
-        allRegionsState={allRegionsState}
-      />
+      {worksheetData.meta.mode === 'auto' && currentPageData ? (
+        <AutoModeContentDisplay
+          worksheetId={id}
+          pageNumber={pageIndex}
+          autoModePageData={currentPageData}
+          pdfUrl={worksheetData.pdfUrl}
+          onTextModeChange={setIsTextModeActive}
+          onGuidanceStateChange={handleGuidanceStateChange}
+        />
+      ) : (
+        <WorksheetViewer 
+          worksheetId={id} 
+          pageIndex={pageIndex} 
+          worksheetMeta={worksheetData.meta as any}
+          pdfUrl={worksheetData.pdfUrl}
+          onTextModeChange={setIsTextModeActive}
+          initialActiveRegion={initialActiveRegion}
+          initialCurrentStepIndex={initialCurrentStepIndex}
+          onRegionStateChange={handleRegionStateChange}
+          allRegionsState={allRegionsState}
+        />
+      )}
       <AIChatButton 
         worksheetId={id} 
         pageNumber={pageIndex} 
         isTextModeActive={isTextModeActive}
-        activeRegion={currentActiveRegion}
-        currentStepIndex={currentStepIndex}
+        activeRegion={worksheetData.meta.mode === 'auto' ? null : currentActiveRegion}
+        currentStepIndex={worksheetData.meta.mode === 'auto' ? currentGuidanceStepIndex : currentStepIndex}
         pdfUrl={worksheetData.pdfUrl}
         worksheetMeta={worksheetData.meta}
       />
