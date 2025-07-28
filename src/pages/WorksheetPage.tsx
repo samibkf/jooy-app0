@@ -106,6 +106,9 @@ const WorksheetPage: React.FC = () => {
         setAllRegionsState(parsedState.regions || {});
         console.log('🔍 [DEBUG] Set allRegionsState to:', parsedState.regions || {});
         
+        // Set all guidance state
+        setAllGuidanceState(parsedState.guidance || {});
+        
         // If we have location state (from AI chat), prioritize that
         if (locationState?.initialActiveRegion) {
           console.log('🔍 [DEBUG] Using location state - initialActiveRegion:', locationState.initialActiveRegion);
@@ -122,27 +125,52 @@ const WorksheetPage: React.FC = () => {
             setInitialActiveRegion(lastActiveRegion);
             setInitialCurrentStepIndex(regionState?.currentStepIndex || 0);
           }
+        } else if (locationState?.initialActiveGuidance) {
+          console.log('🔍 [DEBUG] Using location state - initialActiveGuidance:', locationState.initialActiveGuidance);
+          setInitialActiveGuidance(locationState.initialActiveGuidance);
+          setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
+        } else if (parsedState.lastActiveGuidanceIndex !== null && worksheetData?.meta?.mode === 'auto' && 'data' in worksheetData.meta) {
+          // Find the last active guidance from the stored data (only for auto mode)
+          const pageIndex = parseInt(n, 10);
+          const pageData = worksheetData.meta.data.find(page => page.page_number === pageIndex);
+          if (pageData && pageData.guidance[parsedState.lastActiveGuidanceIndex]) {
+            const lastActiveGuidance = pageData.guidance[parsedState.lastActiveGuidanceIndex];
+            const guidanceState = parsedState.guidance[parsedState.lastActiveGuidanceIndex];
+            console.log('🔍 [DEBUG] Found last active guidance:', parsedState.lastActiveGuidanceIndex, 'with state:', guidanceState);
+            setInitialActiveGuidance(lastActiveGuidance);
+            setInitialGuidanceStepIndex(guidanceState?.currentStepIndex || 0);
+          }
         }
       } else {
         console.log('🔍 [DEBUG] No session state found for key:', sessionKey);
         setAllRegionsState({});
+        setAllGuidanceState({});
         
         // Use location state if available
         if (locationState?.initialActiveRegion) {
           console.log('🔍 [DEBUG] Using location state (no session) - initialActiveRegion:', locationState.initialActiveRegion);
           setInitialActiveRegion(locationState.initialActiveRegion);
           setInitialCurrentStepIndex(locationState.initialCurrentStepIndex || 0);
+        } else if (locationState?.initialActiveGuidance) {
+          console.log('🔍 [DEBUG] Using location state (no session) - initialActiveGuidance:', locationState.initialActiveGuidance);
+          setInitialActiveGuidance(locationState.initialActiveGuidance);
+          setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
         }
       }
     } catch (error) {
       console.warn('🔍 [DEBUG] Failed to load session state:', error);
       setAllRegionsState({});
+      setAllGuidanceState({});
       
       // Use location state if available
       if (locationState?.initialActiveRegion) {
         console.log('🔍 [DEBUG] Using location state (error fallback) - initialActiveRegion:', locationState.initialActiveRegion);
         setInitialActiveRegion(locationState.initialActiveRegion);
         setInitialCurrentStepIndex(locationState.initialCurrentStepIndex || 0);
+      } else if (locationState?.initialActiveGuidance) {
+        console.log('🔍 [DEBUG] Using location state (error fallback) - initialActiveGuidance:', locationState.initialActiveGuidance);
+        setInitialActiveGuidance(locationState.initialActiveGuidance);
+        setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
       }
     }
   }, [id, n, locationState, worksheetData]);
@@ -192,19 +220,14 @@ const WorksheetPage: React.FC = () => {
           console.log('🔍 [DEBUG] Updated region state for:', region.id, 'with stepIndex:', stepIndex);
           
           const stateToSave: SessionPageData = {
-          setAllGuidanceState(parsedState.guidance || {});
             lastActiveRegionId: region.id,
             lastActiveGuidanceIndex: null,
-            regions: updatedAllRegionsState
+            regions: updatedAllRegionsState,
             guidance: allGuidanceState
           };
           
           console.log('🔍 [DEBUG] About to save state to sessionStorage:', stateToSave);
           
-          try {
-          } else if (locationState?.initialActiveGuidance) {
-            console.log('🔍 [DEBUG] Using location state - initialActiveGuidance:', locationState.initialActiveGuidance);
-            setInitialActiveGuidance(locationState.initialActiveGuidance);
             setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
             sessionStorage.setItem(sessionKey, JSON.stringify(stateToSave));
             console.log('🔍 [DEBUG] Successfully saved state to sessionStorage with key:', sessionKey);
@@ -216,17 +239,6 @@ const WorksheetPage: React.FC = () => {
             console.warn('🔍 [DEBUG] Failed to save page state to session:', error);
           }
           
-          console.log('🔍 [DEBUG] Returning updated allRegionsState:', updatedAllRegionsState);
-          } else if (parsedState.lastActiveGuidanceIndex !== null && worksheetData?.meta?.mode === 'auto' && 'data' in worksheetData.meta) {
-            // Find the last active guidance from the stored data (only for auto mode)
-            const pageData = worksheetData.meta.data.find(page => page.page_number === pageIndex);
-            if (pageData && pageData.guidance[parsedState.lastActiveGuidanceIndex]) {
-              const lastActiveGuidance = pageData.guidance[parsedState.lastActiveGuidanceIndex];
-              const guidanceState = parsedState.guidance[parsedState.lastActiveGuidanceIndex];
-              console.log('🔍 [DEBUG] Found last active guidance:', parsedState.lastActiveGuidanceIndex, 'with state:', guidanceState);
-              setInitialActiveGuidance(lastActiveGuidance);
-              setInitialGuidanceStepIndex(guidanceState?.currentStepIndex || 0);
-            }
           return updatedAllRegionsState;
         } else {
           // When no active region, check if we need to update sessionStorage
@@ -243,7 +255,7 @@ const WorksheetPage: React.FC = () => {
               const stateToSave: SessionPageData = {
                 lastActiveRegionId: null,
                 lastActiveGuidanceIndex: null,
-                regions: currentAllRegionsState
+                regions: currentAllRegionsState,
                 guidance: allGuidanceState
               };
               
@@ -261,24 +273,13 @@ const WorksheetPage: React.FC = () => {
           } catch (error) {
             console.warn('🔍 [DEBUG] Failed to update session state:', error);
           }
-          setAllGuidanceState({});
-          
           console.log('🔍 [DEBUG] Returning unchanged allRegionsState:', currentAllRegionsState);
-        setAllGuidanceState({});
           // Return the same object reference to prevent unnecessary re-renders
-          } else if (locationState?.initialActiveGuidance) {
-            console.log('🔍 [DEBUG] Using location state (no session) - initialActiveGuidance:', locationState.initialActiveGuidance);
-            setInitialActiveGuidance(locationState.initialActiveGuidance);
-            setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
           return currentAllRegionsState;
-        } else if (locationState?.initialActiveGuidance) {
-          console.log('🔍 [DEBUG] Using location state (error fallback) - initialActiveGuidance:', locationState.initialActiveGuidance);
-          setInitialActiveGuidance(locationState.initialActiveGuidance);
-          setInitialGuidanceStepIndex(locationState.initialGuidanceStepIndex || 0);
         }
       });
     }
-  }, [id, n]); // Only depend on id and n, which are stable
+  }, [id, n, allGuidanceState]); // Include allGuidanceState in dependencies
 
   // Handle guidance state changes for Auto Mode
   const handleGuidanceStateChange = useCallback((guidance: GuidanceItem | null, stepIndex: number) => {
