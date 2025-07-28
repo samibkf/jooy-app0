@@ -363,7 +363,7 @@ const WorksheetPage: React.FC = () => {
       }
     }
   }, [id, n, worksheetData, allRegionsState, allGuidanceState]);
-
+  
   if (!id || !n) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -428,6 +428,11 @@ const WorksheetPage: React.FC = () => {
   };
 
   const currentPageData = getCurrentPageData();
+  
+  // Get page description for AI context (only for auto mode)
+  const pageDescriptionForAI = worksheetData?.meta?.mode === 'auto' && currentPageData 
+    ? currentPageData.page_description 
+    : undefined;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -439,6 +444,9 @@ const WorksheetPage: React.FC = () => {
           pdfUrl={worksheetData.pdfUrl}
           onTextModeChange={setIsTextModeActive}
           onGuidanceStateChange={handleGuidanceStateChange}
+          initialActiveGuidance={initialActiveGuidance}
+          initialGuidanceStepIndex={initialGuidanceStepIndex}
+          allGuidanceState={allGuidanceState}
         />
       ) : (
         <WorksheetViewer 
@@ -461,6 +469,8 @@ const WorksheetPage: React.FC = () => {
         currentStepIndex={worksheetData.meta.mode === 'auto' ? currentGuidanceStepIndex : currentStepIndex}
         pdfUrl={worksheetData.pdfUrl}
         worksheetMeta={worksheetData.meta}
+        pageDescriptionForAI={pageDescriptionForAI}
+        activeGuidance={worksheetData.meta.mode === 'auto' ? currentActiveGuidance : null}
       />
     </div>
   );

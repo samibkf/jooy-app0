@@ -39,6 +39,7 @@ const AIChatPage: React.FC = () => {
     currentGuidanceStepIndex?: number;
     pdfUrl?: string;
     worksheetMeta?: WorksheetMetadata;
+    pageDescriptionForAI?: string;
   } | null;
   
   const fromTextMode = locationState?.fromTextMode || false;
@@ -48,6 +49,7 @@ const AIChatPage: React.FC = () => {
   const currentGuidanceStepIndex = locationState?.currentGuidanceStepIndex || 0;
   const pdfUrl = locationState?.pdfUrl;
   const worksheetMeta = locationState?.worksheetMeta;
+  const pageDescriptionForAI = locationState?.pageDescriptionForAI;
   
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -244,6 +246,17 @@ const AIChatPage: React.FC = () => {
         .map(msg => `User: ${msg.content}`)
         .join('\n');
 
+      // Create context based on worksheet mode
+      let worksheetContext = '';
+      if (worksheetMeta?.mode === 'auto' && pageDescriptionForAI) {
+        worksheetContext = `\n\nPage Context: ${pageDescriptionForAI}`;
+        if (activeGuidance) {
+          worksheetContext += `\n\nCurrent Guidance: ${activeGuidance.title}\nGuidance Content: ${activeGuidance.description.join(' ')}`;
+        }
+      } else if (activeRegion && activeRegion.description) {
+        worksheetContext = `\n\nRegion Context: ${activeRegion.description.join(' ')}`;
+      }
+
       // Create the prompt with enhanced instructions for distinguishing question types
       const prompt = `Act as a tutor. You must distinguish between two types of student questions:
 
@@ -256,6 +269,7 @@ const AIChatPage: React.FC = () => {
    - Examples: "What is an adjective?", "How do I identify weather patterns?", "Can you explain what this concept means?", "Why does this work this way?"
 
 IMPORTANT: Always respond in the same language as the worksheet content and the user's question.
+${worksheetContext}
 
 Previous conversation:
 ${conversationHistory}

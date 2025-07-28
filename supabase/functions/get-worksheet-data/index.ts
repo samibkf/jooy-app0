@@ -77,13 +77,26 @@ serve(async (req) => {
       // Auto Mode: Use metadata from documents table
       const autoModeData = document.metadata.data || []
       
+      // Process guidance descriptions to ensure they are arrays of paragraphs
+      const processedAutoModeData = autoModeData.map(pageData => ({
+        ...pageData,
+        guidance: pageData.guidance ? pageData.guidance.map(guidanceItem => ({
+          ...guidanceItem,
+          description: Array.isArray(guidanceItem.description) 
+            ? guidanceItem.description.map(desc => typeof desc === 'string' ? desc.trim() : '').filter(desc => desc !== '')
+            : typeof guidanceItem.description === 'string' 
+              ? guidanceItem.description.split('\n').map(desc => desc.trim()).filter(desc => desc !== '')
+              : []
+        })) : []
+      }))
+      
       responseData = {
         meta: {
           mode: 'auto',
           documentName: document.name,
           documentId: document.id,
           drmProtectedPages: document.drm_protected_pages || [],
-          data: autoModeData
+          data: processedAutoModeData
         },
         pdfUrl
       }

@@ -15,6 +15,7 @@ interface AIChatButtonProps {
   currentStepIndex?: number;
   pdfUrl: string;
   worksheetMeta: WorksheetMetadata;
+  pageDescriptionForAI?: string;
 }
 
 const AIChatButton: React.FC<AIChatButtonProps> = ({ 
@@ -25,7 +26,8 @@ const AIChatButton: React.FC<AIChatButtonProps> = ({
   activeGuidance,
   currentStepIndex = 0,
   pdfUrl,
-  worksheetMeta
+  worksheetMeta,
+  pageDescriptionForAI
 }) => {
   const navigate = useNavigate();
 
@@ -76,7 +78,8 @@ const AIChatButton: React.FC<AIChatButtonProps> = ({
         currentStepIndex: currentStepIndex,
         currentGuidanceStepIndex: currentStepIndex,
         pdfUrl: pdfUrl,
-        worksheetMeta: worksheetMeta
+        worksheetMeta: worksheetMeta,
+        pageDescriptionForAI: pageDescriptionForAI
       } 
     });
   };
