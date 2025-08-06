@@ -16,7 +16,6 @@ interface PasswordRequirement {
 
 const passwordRequirements: PasswordRequirement[] = [
   { label: 'At least 8 characters', test: (pwd) => pwd.length >= 8 },
-  { label: 'Contains uppercase letter', test: (pwd) => /[A-Z]/.test(pwd) },
   { label: 'Contains lowercase letter', test: (pwd) => /[a-z]/.test(pwd) },
   { label: 'Contains number', test: (pwd) => /\d/.test(pwd) },
 ];
