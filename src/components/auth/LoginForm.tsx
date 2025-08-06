@@ -58,7 +58,18 @@ const LoginForm: React.FC = () => {
     const { error } = await signIn(email, password);
 
     if (error) {
-      setErrors({ general: error.message });
+      // Provide more user-friendly error messages
+      if (error.message.includes('Invalid login credentials')) {
+        setErrors({ 
+          general: 'Invalid email or password. Please check your credentials and try again.' 
+        });
+      } else if (error.message.includes('Email not confirmed')) {
+        setErrors({ 
+          general: 'Please check your email and click the confirmation link before signing in.' 
+        });
+      } else {
+        setErrors({ general: error.message });
+      }
     } else {
       // Redirect to intended destination or home
       navigate(from, { replace: true });
