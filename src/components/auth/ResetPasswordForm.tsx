@@ -19,7 +19,6 @@ const passwordRequirements: PasswordRequirement[] = [
   { label: 'Contains uppercase letter', test: (pwd) => /[A-Z]/.test(pwd) },
   { label: 'Contains lowercase letter', test: (pwd) => /[a-z]/.test(pwd) },
   { label: 'Contains number', test: (pwd) => /\d/.test(pwd) },
-  { label: 'Contains special character', test: (pwd) => /[!@#$%^&*(),.?":{}|<>]/.test(pwd) },
 ];
 
 const ResetPasswordForm: React.FC = () => {
