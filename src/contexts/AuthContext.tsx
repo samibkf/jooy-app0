@@ -22,6 +22,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signInWithGoogle: () => Promise<{ error: AuthError | null }>;
+  signInWithGoogle: () => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<{ error: AuthError | null }>;
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: Error | null }>;
@@ -184,6 +185,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Google Sign-In function
+  const signInWithGoogle = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+
+      if (error) {
+        toast({
+          title: "Google Sign-In Error",
+          description: error.message,
+          variant: "destructive"
+        });
+        return { error };
+      }
+
+      // Supabase handles the redirection, so no further client-side navigation needed here
+      return { error: null };
+    } catch (error) {
+      const authError = error as AuthError;
+      toast({
+        title: "Google Sign-In Error",
+        description: authError.message,
+        variant: "destructive"
+      });
+      return { error: authError };
+    }
+  };
+
   // Sign out function
   const signOut = async () => {
     try {
@@ -296,6 +329,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     signUp,
     signIn,
+    signInWithGoogle,
     signOut,
     resetPassword,
     updateProfile,
