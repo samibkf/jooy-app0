@@ -72,8 +72,8 @@ const LoginForm: React.FC = () => {
         setErrors({ general: error.message });
       }
     } else {
-      // Redirect to intended destination or home
-      navigate(from, { replace: true });
+      // Redirect to profile selection first
+      navigate('/profile-selection', { replace: true });
     }
 
     setLoading(false);
@@ -88,7 +88,7 @@ const LoginForm: React.FC = () => {
     if (error) {
       setGoogleLoading(false);
     }
-    // If successful, Supabase will handle the redirect, so we don't need to set loading to false
+    // If successful, Supabase will redirect to /profile-selection
   };
 
   const isRTL = t('common.language') === 'العربية';

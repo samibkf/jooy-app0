@@ -15,6 +15,7 @@ import NotFound from "./pages/NotFound";
 import QrScannerPage from "./pages/QrScannerPage";
 import WorksheetPage from "./pages/WorksheetPage";
 import AIChatPage from "./pages/AIChatPage";
+import ProfileSelectionPage from "./pages/ProfileSelectionPage";
 import QRScannerButton from "./components/QRScannerButton";
 import FullscreenButton from "./components/FullscreenButton";
 import PWAInstallPrompt from "./components/PWAInstallPrompt";
@@ -36,6 +37,13 @@ const App = () => (
             <Route path="/auth/forgot-password" element={<ForgotPasswordForm />} />
             <Route path="/reset-password" element={<ResetPasswordForm />} />
             
+            {/* Profile Selection Page - accessible after login */}
+            <Route path="/profile-selection" element={
+              <ProtectedRoute requireActiveProfile={false}>
+                <ProfileSelectionPage />
+              </ProtectedRoute>
+            } />
+            
             {/* Protected routes */}
             <Route path="/worksheet/:id/:n" element={
               <ProtectedRoute>
@@ -47,7 +55,7 @@ const App = () => (
                 <AIChatPage />
               </ProtectedRoute>
             } />
-            <Route path="/profile" element={
+            <Route path="/account-settings" element={
               <ProtectedRoute>
                 <ProfilePage />
               </ProtectedRoute>
@@ -65,6 +73,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={null} />
             <Route path="/auth/*" element={null} />
+            <Route path="/profile-selection" element={null} />
             <Route path="*" element={<QRScannerButton />} />
           </Routes>
           <PWAInstallPrompt />

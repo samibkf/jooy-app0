@@ -3,30 +3,51 @@ import { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 
-interface UserProfile {
+interface AccountProfile {
   id: string;
   email: string;
   full_name?: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'student';
   plan_id?: string;
   credits_remaining: number;
   onboarding_completed: boolean;
   created_at: string;
+  updated_at: string;
+}
+
+interface StudentProfile {
+  id: string;
+  account_id: string;
+  profile_name: string;
+  avatar_url?: string;
+  profile_color: string;
+  preferences: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  last_accessed_at?: string;
+  is_active: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
-  profile: UserProfile | null;
+  account: AccountProfile | null;
+  studentProfiles: StudentProfile[] | null;
+  activeStudentProfile: StudentProfile | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName?: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, fullName?: string, initialProfileName?: string) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signInWithGoogle: () => Promise<{ error: AuthError | null }>;
   signInWithGoogle: () => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<{ error: AuthError | null }>;
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
-  updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: Error | null }>;
-  refreshProfile: () => Promise<void>;
+  updateAccount: (updates: Partial<AccountProfile>) => Promise<{ error: Error | null }>;
+  refreshAccountAndProfiles: () => Promise<void>;
+  
+  // Student profile management
+  selectStudentProfile: (profileId: string) => Promise<void>;
+  createStudentProfile: (profileName: string, avatarUrl?: string, profileColor?: string) => Promise<{ error: Error | null; newProfile?: StudentProfile }>;
+  updateStudentProfile: (profileId: string, updates: Partial<StudentProfile>) => Promise<{ error: Error | null }>;
+  deleteStudentProfile: (profileId: string) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,36 +62,79 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [account, setAccount] = useState<AccountProfile | null>(null);
+  const [studentProfiles, setStudentProfiles] = useState<StudentProfile[] | null>(null);
+  const [activeStudentProfile, setActiveStudentProfile] = useState<StudentProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch user profile from profiles table
-  const fetchProfile = async (userId: string): Promise<UserProfile | null> => {
+  // Fetch account and student profiles
+  const fetchAccountAndProfiles = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
+      // Fetch account data
+      const { data: accountData, error: accountError } = await supabase
+        .from('accounts')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (error) {
-        console.error('Error fetching profile:', error);
-        return null;
+      if (accountError) {
+        console.error('Error fetching account:', accountError);
+        setAccount(null);
+        setStudentProfiles(null);
+        setActiveStudentProfile(null);
+        return;
+      }
+      setAccount(accountData as AccountProfile);
+
+      // Fetch student profiles for this account
+      const { data: studentProfilesData, error: studentProfilesError } = await supabase
+        .from('student_profiles')
+        .select('*')
+        .eq('account_id', userId)
+        .eq('is_active', true)
+        .order('last_accessed_at', { ascending: false, nullsFirst: false });
+
+      if (studentProfilesError) {
+        console.error('Error fetching student profiles:', studentProfilesError);
+        setStudentProfiles(null);
+        setActiveStudentProfile(null);
+        return;
+      }
+      setStudentProfiles(studentProfilesData as StudentProfile[]);
+
+      // Restore active student profile from localStorage
+      const storedActiveProfileId = localStorage.getItem('active_student_profile_id');
+      if (storedActiveProfileId) {
+        const foundProfile = (studentProfilesData as StudentProfile[]).find(p => p.id === storedActiveProfileId);
+        if (foundProfile) {
+          setActiveStudentProfile(foundProfile);
+          // Update last accessed time
+          await supabase.rpc('switch_to_profile', { profile_id: foundProfile.id });
+        } else {
+          localStorage.removeItem('active_student_profile_id');
+          setActiveStudentProfile(null);
+        }
+      } else {
+        setActiveStudentProfile(null);
       }
 
-      return data as UserProfile;
     } catch (error) {
-      console.error('Error fetching profile:', error);
-      return null;
+      console.error('Error in fetchAccountAndProfiles:', error);
+      setAccount(null);
+      setStudentProfiles(null);
+      setActiveStudentProfile(null);
     }
   };
 
-  // Refresh profile data
-  const refreshProfile = async () => {
+  // Refresh account and profiles data
+  const refreshAccountAndProfiles = async () => {
     if (user) {
-      const profileData = await fetchProfile(user.id);
-      setProfile(profileData);
+      await fetchAccountAndProfiles(user.id);
+    } else {
+      setAccount(null);
+      setStudentProfiles(null);
+      setActiveStudentProfile(null);
     }
   };
 
@@ -82,7 +146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        fetchProfile(session.user.id).then(setProfile);
+        fetchAccountAndProfiles(session.user.id);
       }
       
       setLoading(false);
@@ -97,10 +161,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          const profileData = await fetchProfile(session.user.id);
-          setProfile(profileData);
+          await fetchAccountAndProfiles(session.user.id);
         } else {
-          setProfile(null);
+          setAccount(null);
+          setStudentProfiles(null);
+          setActiveStudentProfile(null);
+          localStorage.removeItem('active_student_profile_id');
         }
         
         setLoading(false);
@@ -111,7 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Sign up function
-  const signUp = async (email: string, password: string, fullName?: string) => {
+  const signUp = async (email: string, password: string, fullName?: string, initialProfileName?: string) => {
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -119,6 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         options: {
           data: {
             full_name: fullName || '',
+            initial_profile_name: initialProfileName || 'Student 1',
           }
         }
       });
@@ -137,6 +204,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           title: "Check Your Email",
           description: "Please check your email for a confirmation link to complete your registration.",
         });
+      }
+
+      // If user is immediately signed in, the trigger will create the default profile
+      if (data.user && data.session) {
+        // Refresh to get the newly created profile
+        setTimeout(() => {
+          fetchAccountAndProfiles(data.user.id);
+        }, 1000);
       }
 
       return { error: null };
@@ -191,7 +266,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: `${window.location.origin}/profile-selection`,
         },
       });
 
@@ -281,50 +356,141 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Update profile function
-  const updateProfile = async (updates: Partial<UserProfile>) => {
+  // Update account function
+  const updateAccount = async (updates: Partial<AccountProfile>) => {
     if (!user) {
       return { error: new Error('No user logged in') };
     }
 
     try {
       const { error } = await supabase
-        .from('profiles')
+        .from('accounts')
         .update(updates)
         .eq('id', user.id);
 
       if (error) {
-        toast({
-          title: "Profile Update Error",
-          description: error.message,
-          variant: "destructive"
-        });
+        toast({ title: "Account Update Error", description: error.message, variant: "destructive" });
         return { error };
       }
 
-      // Refresh profile data
-      await refreshProfile();
-
-      toast({
-        title: "Profile Updated",
-        description: "Your profile has been successfully updated.",
-      });
-
+      await refreshAccountAndProfiles();
+      toast({ title: "Account Updated", description: "Your account has been successfully updated." });
       return { error: null };
     } catch (error) {
       const updateError = error as Error;
-      toast({
-        title: "Profile Update Error",
-        description: updateError.message,
-        variant: "destructive"
-      });
+      toast({ title: "Account Update Error", description: updateError.message, variant: "destructive" });
       return { error: updateError };
+    }
+  };
+
+  // Select student profile
+  const selectStudentProfile = async (profileId: string) => {
+    if (!studentProfiles) return;
+    
+    const selected = studentProfiles.find(p => p.id === profileId);
+    if (selected) {
+      setActiveStudentProfile(selected);
+      localStorage.setItem('active_student_profile_id', selected.id);
+      
+      // Update last accessed time
+      await supabase.rpc('switch_to_profile', { profile_id: profileId });
+    }
+  };
+
+  // Create student profile
+  const createStudentProfile = async (profileName: string, avatarUrl?: string, profileColor?: string) => {
+    if (!user) return { error: new Error('No account logged in') };
+    
+    try {
+      const { data, error } = await supabase
+        .from('student_profiles')
+        .insert({
+          account_id: user.id,
+          profile_name: profileName,
+          avatar_url: avatarUrl,
+          profile_color: profileColor || '#3b82f6'
+        })
+        .select()
+        .single();
+
+      if (error) {
+        toast({ title: "Profile Creation Error", description: error.message, variant: "destructive" });
+        return { error };
+      }
+
+      await refreshAccountAndProfiles();
+      toast({ title: "Profile Created", description: `${profileName} has been added.` });
+      return { error: null, newProfile: data as StudentProfile };
+    } catch (error) {
+      const createError = error as Error;
+      toast({ title: "Profile Creation Error", description: createError.message, variant: "destructive" });
+      return { error: createError };
+    }
+  };
+
+  // Update student profile
+  const updateStudentProfile = async (profileId: string, updates: Partial<StudentProfile>) => {
+    if (!user) return { error: new Error('No account logged in') };
+    
+    try {
+      const { error } = await supabase
+        .from('student_profiles')
+        .update(updates)
+        .eq('id', profileId)
+        .eq('account_id', user.id);
+
+      if (error) {
+        toast({ title: "Profile Update Error", description: error.message, variant: "destructive" });
+        return { error };
+      }
+
+      await refreshAccountAndProfiles();
+      toast({ title: "Profile Updated", description: "Student profile updated successfully." });
+      return { error: null };
+    } catch (error) {
+      const updateError = error as Error;
+      toast({ title: "Profile Update Error", description: updateError.message, variant: "destructive" });
+      return { error: updateError };
+    }
+  };
+
+  // Delete student profile
+  const deleteStudentProfile = async (profileId: string) => {
+    if (!user) return { error: new Error('No account logged in') };
+    
+    try {
+      const { error } = await supabase
+        .from('student_profiles')
+        .update({ is_active: false })
+        .eq('id', profileId)
+        .eq('account_id', user.id);
+
+      if (error) {
+        toast({ title: "Profile Deletion Error", description: error.message, variant: "destructive" });
+        return { error };
+      }
+
+      // If deleted profile was active, clear it
+      if (activeStudentProfile?.id === profileId) {
+        setActiveStudentProfile(null);
+        localStorage.removeItem('active_student_profile_id');
+      }
+
+      await refreshAccountAndProfiles();
+      toast({ title: "Profile Deleted", description: "Student profile has been removed." });
+      return { error: null };
+    } catch (error) {
+      const deleteError = error as Error;
+      toast({ title: "Profile Deletion Error", description: deleteError.message, variant: "destructive" });
+      return { error: deleteError };
     }
   };
 
   const value: AuthContextType = {
     user,
-    profile,
+    account,
+    studentProfiles,
+    activeStudentProfile,
     session,
     loading,
     signUp,
@@ -332,8 +498,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signInWithGoogle,
     signOut,
     resetPassword,
-    updateProfile,
-    refreshProfile,
+    updateAccount,
+    refreshAccountAndProfiles,
+    selectStudentProfile,
+    createStudentProfile,
+    updateStudentProfile,
+    deleteStudentProfile,
   };
 
   return (

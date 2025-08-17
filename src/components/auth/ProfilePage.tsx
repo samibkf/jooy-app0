@@ -12,12 +12,12 @@ import { useTranslation } from 'react-i18next';
 
 const ProfilePage: React.FC = () => {
   const { t } = useTranslation();
-  const { user, profile, updateProfile, signOut } = useAuth();
+  const { user, account, updateAccount, signOut } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [fullName, setFullName] = useState(profile?.full_name || '');
+  const [fullName, setFullName] = useState(account?.full_name || '');
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  const handleUpdateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!fullName.trim()) {
@@ -26,7 +26,7 @@ const ProfilePage: React.FC = () => {
 
     setLoading(true);
     
-    const { error } = await updateProfile({
+    const { error } = await updateAccount({
       full_name: fullName.trim()
     });
 
@@ -43,7 +43,7 @@ const ProfilePage: React.FC = () => {
 
   const isRTL = t('common.language') === 'العربية';
 
-  if (!user || !profile) {
+  if (!user || !account) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -56,7 +56,7 @@ const ProfilePage: React.FC = () => {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900" dir={isRTL ? 'rtl' : 'ltr'}>
-            Profile Settings
+            Account Settings
           </h1>
           <p className="text-gray-600 mt-2" dir={isRTL ? 'rtl' : 'ltr'}>
             Manage your account information and preferences
@@ -70,10 +70,10 @@ const ProfilePage: React.FC = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2" dir={isRTL ? 'rtl' : 'ltr'}>
                   <User className="h-5 w-5" />
-                  Personal Information
+                  Account Information
                 </CardTitle>
                 <CardDescription dir={isRTL ? 'rtl' : 'ltr'}>
-                  Update your personal details here
+                  Update your account details here
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -98,15 +98,15 @@ const ProfilePage: React.FC = () => {
 
                 {/* Full Name */}
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
+                  <Label htmlFor="fullName">Account Name</Label>
                   {isEditing ? (
-                    <form onSubmit={handleUpdateProfile} className="space-y-3">
+                    <form onSubmit={handleUpdateAccount} className="space-y-3">
                       <Input
                         id="fullName"
                         type="text"
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
-                        placeholder="Enter your full name"
+                        placeholder="Enter your account name"
                         disabled={loading}
                         dir={getTextDirection(fullName)}
                       />
@@ -132,7 +132,7 @@ const ProfilePage: React.FC = () => {
                           size="sm"
                           onClick={() => {
                             setIsEditing(false);
-                            setFullName(profile.full_name || '');
+                            setFullName(account.full_name || '');
                           }}
                           disabled={loading}
                         >
@@ -142,8 +142,8 @@ const ProfilePage: React.FC = () => {
                     </form>
                   ) : (
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-900" dir={getTextDirection(profile.full_name || '')}>
-                        {profile.full_name || 'Not set'}
+                      <span className="text-gray-900" dir={getTextDirection(account.full_name || '')}>
+                        {account.full_name || 'Not set'}
                       </span>
                       <Button
                         variant="outline"
@@ -165,7 +165,7 @@ const ProfilePage: React.FC = () => {
                     Member Since
                   </Label>
                   <p className="text-gray-900">
-                    {new Date(profile.created_at).toLocaleDateString('en-US', {
+                    {new Date(account.created_at).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric'
@@ -189,8 +189,8 @@ const ProfilePage: React.FC = () => {
                 {/* Role */}
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-600" dir={isRTL ? 'rtl' : 'ltr'}>Role:</span>
-                  <Badge variant={profile.role === 'admin' ? 'default' : 'secondary'}>
-                    {profile.role === 'admin' ? 'Administrator' : 'User'}
+                  <Badge variant={account.role === 'admin' ? 'default' : 'secondary'}>
+                    {account.role === 'admin' ? 'Administrator' : 'User'}
                   </Badge>
                 </div>
 
@@ -201,15 +201,15 @@ const ProfilePage: React.FC = () => {
                     Credits:
                   </span>
                   <span className="font-semibold text-gray-900">
-                    {profile.credits_remaining}
+                    {account.credits_remaining}
                   </span>
                 </div>
 
                 {/* Onboarding Status */}
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-600" dir={isRTL ? 'rtl' : 'ltr'}>Onboarding:</span>
-                  <Badge variant={profile.onboarding_completed ? 'default' : 'secondary'}>
-                    {profile.onboarding_completed ? 'Completed' : 'Pending'}
+                  <Badge variant={account.onboarding_completed ? 'default' : 'secondary'}>
+                    {account.onboarding_completed ? 'Completed' : 'Pending'}
                   </Badge>
                 </div>
               </CardContent>

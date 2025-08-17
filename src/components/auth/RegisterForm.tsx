@@ -105,11 +105,7 @@ const RegisterForm: React.FC = () => {
       setErrors({ general: error.message });
     } else {
       // Show success message and redirect to login
-      navigate('/auth/login', { 
-        state: { 
-          message: 'Registration successful! Please check your email to verify your account.' 
-        } 
-      });
+      navigate('/profile-selection', { replace: true });
     }
 
     setLoading(false);
@@ -124,7 +120,7 @@ const RegisterForm: React.FC = () => {
     if (error) {
       setGoogleLoading(false);
     }
-    // If successful, Supabase will handle the redirect, so we don't need to set loading to false
+    // If successful, Supabase will redirect to /profile-selection
   };
 
   const isRTL = t('common.language') === 'العربية';

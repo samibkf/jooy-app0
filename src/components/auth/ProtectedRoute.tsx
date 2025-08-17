@@ -7,14 +7,16 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
   redirectTo?: string;
+  requireActiveProfile?: boolean;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
   children, 
   requireAdmin = false,
-  redirectTo = '/auth/login'
+  redirectTo = '/auth/login',
+  requireActiveProfile = true
 }) => {
-  const { user, profile, loading } = useAuth();
+  const { user, account, activeStudentProfile, loading } = useAuth();
   const location = useLocation();
 
   // Show loading spinner while checking authentication
@@ -30,12 +32,17 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   // Redirect to login if not authenticated
-  if (!user || !profile) {
+  if (!user || !account) {
     return <Navigate to={redirectTo} state={{ from: location }} replace />;
   }
 
+  // If an active student profile is required but not selected, redirect to profile selection
+  if (requireActiveProfile && !activeStudentProfile) {
+    return <Navigate to="/profile-selection" state={{ from: location }} replace />;
+  }
+
   // Check admin requirement
-  if (requireAdmin && profile.role !== 'admin') {
+  if (requireAdmin && account.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
