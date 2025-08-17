@@ -1,5 +1,7 @@
 import React from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -37,10 +39,41 @@ const VirtualTutorSelectionModal: React.FC<VirtualTutorSelectionModalProps> = ({
   onSelectTutor
 }) => {
   const { t } = useTranslation();
+  const [isI18nReady, setIsI18nReady] = useState(false);
+
+  // Wait for i18next to be ready before rendering translated content
+  useEffect(() => {
+    if (i18n.isInitialized) {
+      setIsI18nReady(true);
+    } else {
+      const handleInitialized = () => {
+        setIsI18nReady(true);
+      };
+      
+      i18n.on('initialized', handleInitialized);
+      
+      return () => {
+        i18n.off('initialized', handleInitialized);
+      };
+    }
+  }, []);
 
   const handleTutorClick = (videoSrc: string) => {
     onSelectTutor(videoSrc);
   };
+
+  // Show loading while i18next is initializing
+  if (!isI18nReady) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-md mx-auto">
+          <div className="text-center p-4">
+            <p className="text-lg">Loading...</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

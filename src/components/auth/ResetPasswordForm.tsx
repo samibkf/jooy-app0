@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,7 @@ const passwordRequirements: PasswordRequirement[] = [
 
 const ResetPasswordForm: React.FC = () => {
   const { t } = useTranslation();
+  const [isI18nReady, setIsI18nReady] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
@@ -35,6 +37,23 @@ const ResetPasswordForm: React.FC = () => {
     confirmPassword?: string;
     general?: string;
   }>({});
+
+  // Wait for i18next to be ready before rendering translated content
+  useEffect(() => {
+    if (i18n.isInitialized) {
+      setIsI18nReady(true);
+    } else {
+      const handleInitialized = () => {
+        setIsI18nReady(true);
+      };
+      
+      i18n.on('initialized', handleInitialized);
+      
+      return () => {
+        i18n.off('initialized', handleInitialized);
+      };
+    }
+  }, []);
 
   // Check if we have the required parameters
   useEffect(() => {
@@ -51,6 +70,17 @@ const ResetPasswordForm: React.FC = () => {
       navigate('/auth/forgot-password');
     }
   }, [searchParams, navigate]);
+
+  // Show loading while i18next is initializing
+  if (!isI18nReady) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   const validateForm = () => {
     const newErrors: typeof errors = {};

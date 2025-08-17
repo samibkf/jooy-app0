@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +24,7 @@ const passwordRequirements: PasswordRequirement[] = [
 
 const RegisterForm: React.FC = () => {
   const { t } = useTranslation();
+  const [isI18nReady, setIsI18nReady] = useState(false);
   const { signUp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   
@@ -42,6 +45,34 @@ const RegisterForm: React.FC = () => {
     confirmPassword?: string;
     general?: string;
   }>({});
+
+  // Wait for i18next to be ready before rendering translated content
+  useEffect(() => {
+    if (i18n.isInitialized) {
+      setIsI18nReady(true);
+    } else {
+      const handleInitialized = () => {
+        setIsI18nReady(true);
+      };
+      
+      i18n.on('initialized', handleInitialized);
+      
+      return () => {
+        i18n.off('initialized', handleInitialized);
+      };
+    }
+  }, []);
+
+  // Show loading while i18next is initializing
+  if (!isI18nReady) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   const validateForm = () => {
     const newErrors: typeof errors = {};
