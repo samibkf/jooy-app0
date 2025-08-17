@@ -111,32 +111,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Create a more aggressive timeout wrapper
       const fetchWithTimeout = async () => {
         return new Promise(async (resolve, reject) => {
-          // Set a 5-second timeout
+          // Set a 10-second timeout
           const timeoutId = setTimeout(() => {
-            console.log('AuthContext: Query timed out after 5 seconds');
-            reject(new Error('Query timeout after 5 seconds'));
-          }, 5000);
+            console.log('AuthContext: Query timed out after 10 seconds');
+            reject(new Error('Query timeout after 10 seconds'));
+          }, 10000);
           
           try {
-            console.log('AuthContext: Starting Supabase query...');
-            const result = await supabase
+            const { data: profileData, error: profileError } = await supabase
               .from('profiles')
               .select('*')
               .eq('id', userId)
               .single();
             
             clearTimeout(timeoutId);
-            console.log('AuthContext: Supabase query completed successfully');
-            resolve(result);
+            resolve({ data: profileData, error: profileError });
           } catch (error) {
             clearTimeout(timeoutId);
-            console.log('AuthContext: Supabase query failed with error:', error);
             reject(error);
           }
         });
       };
-      
+
       const { data: profileData, error: profileError } = await fetchWithTimeout() as any;
+
+      console.log('AuthContext: Supabase query completed. Error:', profileError, 'Data:', profileData);
+
+      if (profileError) {
+        console.error('AuthContext: Error fetching profile:', profileError);
+        
         // Handle timeout errors
         if (profileError.message?.includes('timeout')) {
           console.error('AuthContext: Query timed out, falling back to mock profile');
