@@ -44,10 +44,10 @@ const ProfileSelectionPage: React.FC = () => {
 
   // Redirect if already has active profile
   useEffect(() => {
-    if (user && activeStudentProfile && !loading) {
+    if (user && activeStudentProfile && !loading && !showCreateDialog && !showManageDialog && !editingProfile) {
       navigate('/home', { replace: true });
     }
-  }, [user, activeStudentProfile, loading, navigate]);
+  }, [user, activeStudentProfile, loading, navigate, showCreateDialog, showManageDialog, editingProfile]);
 
   const handleProfileSelect = async (profileId: string) => {
     if (loading) return;
