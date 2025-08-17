@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session, AuthError } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseReady } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 
 // Define types for the context
@@ -69,21 +69,129 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fetch account and student profiles
   const fetchAccountAndProfiles = async (userId: string) => {
     console.log('AuthContext: fetchAccountAndProfiles started for userId:', userId);
+    
+    // Check if Supabase is configured
+    if (!isSupabaseReady) {
+      console.log('AuthContext: Supabase not configured, creating mock profile');
+      
+      // Create a mock profile for development
+      const mockProfile: AccountProfile = {
+        id: userId,
+        email: 'mock@example.com',
+        full_name: 'Mock User',
+        role: 'user',
+        created_at: new Date().toISOString(),
+        plan_id: null,
+        credits_remaining: 100,
+        onboarding_completed: false,
+        updated_at: new Date().toISOString(),
+        preferences: null
+      };
+      
+      const mockStudentProfile: StudentProfile = {
+        id: uuidv4(),
+        profile_name: 'Student',
+        profile_color: '#3b82f6',
+        preferences: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_active: true,
+      };
+      
+      setAccount(mockProfile);
+      setStudentProfiles([mockStudentProfile]);
+      setActiveStudentProfile(mockStudentProfile);
+      console.log('AuthContext: Mock profile setup completed');
+      return;
+    }
+    
     try {
+      console.log('AuthContext: Attempting to fetch profile from Supabase...');
+      
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
+      console.log('AuthContext: Supabase query completed. Error:', profileError, 'Data:', profileData);
+
       if (profileError) {
         console.error('AuthContext: Error fetching profile:', profileError);
+        
+        // If profile doesn't exist, this might be a new user - try to create one
+        if (profileError.code === 'PGRST116') {
+          console.log('AuthContext: Profile not found, attempting to create new profile...');
+          
+          // Get user data from auth
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          
+          if (authUser) {
+            const newProfileData = {
+              id: userId,
+              email: authUser.email || '',
+              full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
+              role: 'user' as const,
+              credits_remaining: 100,
+              onboarding_completed: false,
+              preferences: null
+            };
+            
+            console.log('AuthContext: Creating new profile with data:', newProfileData);
+            
+            const { data: createdProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert(newProfileData)
+              .select()
+              .single();
+            
+            if (createError) {
+              console.error('AuthContext: Error creating profile:', createError);
+              setAccount(null);
+              setStudentProfiles(null);
+              setActiveStudentProfile(null);
+              return;
+            }
+            
+            console.log('AuthContext: New profile created:', createdProfile);
+            
+            // Create default student profile
+            const defaultStudentProfile: StudentProfile = {
+              id: uuidv4(),
+              profile_name: createdProfile.full_name?.split(' ')[0] || 'Student',
+              profile_color: '#3b82f6',
+              preferences: {},
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              is_active: true,
+            };
+            
+            // Update the profile with the default student profile
+            const updatedPreferences = {
+              activeProfileId: defaultStudentProfile.id,
+              studentProfiles: [defaultStudentProfile]
+            };
+            
+            await supabase
+              .from('profiles')
+              .update({ preferences: updatedPreferences })
+              .eq('id', userId);
+            
+            setAccount({ ...createdProfile, preferences: updatedPreferences } as AccountProfile);
+            setStudentProfiles([defaultStudentProfile]);
+            setActiveStudentProfile(defaultStudentProfile);
+            console.log('AuthContext: New user setup completed successfully');
+            return;
+          }
+        }
+        
         setAccount(null);
         setStudentProfiles(null);
         setActiveStudentProfile(null);
         return;
       }
-      console.log('AuthContext: Profile data fetched:', profileData);
+      
+      console.log('AuthContext: Profile data fetched successfully:', profileData);
       setAccount(profileData as AccountProfile);
 
       // Handle student profiles stored in preferences
@@ -91,24 +199,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let currentActiveStudentProfile: StudentProfile | null = null;
       const userPreferences = profileData.preferences as AccountPreferences | null;
 
+      console.log('AuthContext: Processing user preferences:', userPreferences);
+
       if (userPreferences && Array.isArray(userPreferences.studentProfiles) && userPreferences.studentProfiles.length > 0) {
         currentStudentProfiles = userPreferences.studentProfiles;
+        console.log('AuthContext: Found existing student profiles:', currentStudentProfiles.length);
         
         // Try to find the active profile
         if (userPreferences.activeProfileId) {
           currentActiveStudentProfile = currentStudentProfiles.find(p => p.id === userPreferences.activeProfileId) || null;
+          console.log('AuthContext: Found active profile by ID:', currentActiveStudentProfile?.profile_name);
         }
         
         // If no active profile found or activeProfileId is missing, default to the first one
         if (!currentActiveStudentProfile) {
           currentActiveStudentProfile = currentStudentProfiles[0];
+          console.log('AuthContext: Defaulting to first profile:', currentActiveStudentProfile.profile_name);
+          
           // Update preferences to set this as active
+          const updatedPreferences = { ...userPreferences, activeProfileId: currentActiveStudentProfile.id };
           await supabase
             .from('profiles')
-            .update({ preferences: { ...userPreferences, activeProfileId: currentActiveStudentProfile.id } })
+            .update({ preferences: updatedPreferences })
             .eq('id', userId);
+          console.log('AuthContext: Updated active profile in database');
         }
       } else {
+        console.log('AuthContext: No student profiles found, creating default profile');
+        
         // If no student profiles exist, create a default one
         const defaultProfile: StudentProfile = {
           id: uuidv4(),
@@ -122,14 +240,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentStudentProfiles = [defaultProfile];
         currentActiveStudentProfile = defaultProfile;
         
+        console.log('AuthContext: Created default profile:', defaultProfile.profile_name);
+        
+        const updatedPreferences = { 
+          activeProfileId: defaultProfile.id, 
+          studentProfiles: currentStudentProfiles 
+        };
+        
         await supabase
           .from('profiles')
-          .update({ preferences: { activeProfileId: defaultProfile.id, studentProfiles: currentStudentProfiles } })
+          .update({ preferences: updatedPreferences })
           .eq('id', userId);
+        console.log('AuthContext: Saved default profile to database');
       }
+      
       setStudentProfiles(currentStudentProfiles);
       setActiveStudentProfile(currentActiveStudentProfile);
-      console.log('AuthContext: fetchAccountAndProfiles completed successfully.');
+      console.log('AuthContext: fetchAccountAndProfiles completed successfully. Active profile:', currentActiveStudentProfile?.profile_name);
 
     } catch (error) {
       console.error('AuthContext: Error in fetchAccountAndProfiles catch block:', error);
@@ -154,26 +281,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Sign in function
   const signIn = async (email: string, password: string) => {
+    console.log('AuthContext: signIn called for email:', email);
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+    console.log('AuthContext: signIn completed, error:', error);
     return { error };
   };
 
   // Sign in with Google function
   const signInWithGoogle = async () => {
+    console.log('AuthContext: signInWithGoogle called');
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/profile-selection`
       }
     });
+    console.log('AuthContext: signInWithGoogle completed, error:', error);
     return { error };
   };
 
   // Sign up function
   const signUp = async (email: string, password: string, fullName: string) => {
+    console.log('AuthContext: signUp called for email:', email);
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -183,19 +315,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       },
     });
+    console.log('AuthContext: signUp completed, error:', error);
     return { error };
   };
 
   // Reset password function
   const resetPassword = async (email: string) => {
+    console.log('AuthContext: resetPassword called for email:', email);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`
     });
+    console.log('AuthContext: resetPassword completed, error:', error);
     return { error };
   };
 
   // Update account function
   const updateAccount = async (updates: Partial<AccountProfile>) => {
+    console.log('AuthContext: updateAccount called with updates:', updates);
     if (!user) return { error: new Error('No user logged in') as AuthError };
 
     const { error } = await supabase
@@ -205,6 +341,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!error && account) {
       setAccount({ ...account, ...updates });
+      console.log('AuthContext: Account updated successfully');
+    } else {
+      console.error('AuthContext: Error updating account:', error);
     }
 
     return { error };
@@ -212,15 +351,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Sign out function
   const signOut = async () => {
+    console.log('AuthContext: signOut called');
     await supabase.auth.signOut();
+    console.log('AuthContext: signOut completed');
   };
 
   // Select student profile function
   const selectStudentProfile = async (profileId: string) => {
-    if (!user || !account || !studentProfiles) return;
+    console.log('AuthContext: selectStudentProfile called for profileId:', profileId);
+    if (!user || !account || !studentProfiles) {
+      console.log('AuthContext: selectStudentProfile - missing required data');
+      return;
+    }
 
     const targetProfile = studentProfiles.find(p => p.id === profileId);
-    if (!targetProfile) return;
+    if (!targetProfile) {
+      console.log('AuthContext: selectStudentProfile - target profile not found');
+      return;
+    }
 
     const updatedPreferences = {
       ...account.preferences,
@@ -235,11 +383,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!error) {
       setActiveStudentProfile(targetProfile);
       setAccount({ ...account, preferences: updatedPreferences });
+      console.log('AuthContext: selectStudentProfile completed successfully');
+    } else {
+      console.error('AuthContext: Error selecting student profile:', error);
     }
   };
 
   // Create student profile function
   const createStudentProfile = async (profileName: string, profileColor: string = '#3b82f6') => {
+    console.log('AuthContext: createStudentProfile called:', profileName, profileColor);
     if (!user || !account) return { error: new Error('No user logged in') as AuthError };
 
     const newProfile: StudentProfile = {
@@ -270,6 +422,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         title: "Profile Created",
         description: `Student profile "${profileName}" has been created successfully.`,
       });
+      console.log('AuthContext: createStudentProfile completed successfully');
+    } else {
+      console.error('AuthContext: Error creating student profile:', error);
     }
 
     return { error };
@@ -277,6 +432,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Update student profile function
   const updateStudentProfile = async (profileId: string, updates: Partial<StudentProfile>) => {
+    console.log('AuthContext: updateStudentProfile called:', profileId, updates);
     if (!user || !account || !studentProfiles) return { error: new Error('No user logged in') as AuthError };
 
     const updatedProfiles = studentProfiles.map(profile =>
@@ -303,6 +459,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (activeStudentProfile?.id === profileId) {
         setActiveStudentProfile({ ...activeStudentProfile, ...updates, updated_at: new Date().toISOString() });
       }
+      console.log('AuthContext: updateStudentProfile completed successfully');
+    } else {
+      console.error('AuthContext: Error updating student profile:', error);
     }
 
     return { error };
@@ -310,6 +469,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Delete student profile function
   const deleteStudentProfile = async (profileId: string) => {
+    console.log('AuthContext: deleteStudentProfile called:', profileId);
     if (!user || !account || !studentProfiles) return { error: new Error('No user logged in') as AuthError };
 
     const updatedProfiles = studentProfiles.filter(profile => profile.id !== profileId);
@@ -339,6 +499,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (activeStudentProfile?.id === profileId) {
         setActiveStudentProfile(updatedProfiles.length > 0 ? updatedProfiles[0] : null);
       }
+      console.log('AuthContext: deleteStudentProfile completed successfully');
+    } else {
+      console.error('AuthContext: Error deleting student profile:', error);
     }
 
     return { error };
@@ -347,33 +510,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize auth state
   useEffect(() => {
     console.log('AuthContext: useEffect mounted, initial loading set to true.');
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('AuthContext: getSession resolved, session:', session);
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        fetchAccountAndProfiles(session.user.id).finally(() => {
-          console.log('AuthContext: fetchAccountAndProfiles finally block, setting loading to false.');
+    
+    const initializeAuth = async () => {
+      try {
+        console.log('AuthContext: Getting initial session...');
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('AuthContext: Error getting session:', error);
           setLoading(false);
-        });
-      } else {
-        console.log('AuthContext: No user session, setting loading to false.');
+          return;
+        }
+        
+        console.log('AuthContext: getSession resolved, session:', session ? 'exists' : 'null');
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          console.log('AuthContext: User found, fetching account and profiles...');
+          await fetchAccountAndProfiles(session.user.id);
+        } else {
+          console.log('AuthContext: No user session found');
+        }
+      } catch (error) {
+        console.error('AuthContext: Error in initializeAuth:', error);
+      } finally {
+        console.log('AuthContext: initializeAuth completed, setting loading to false.');
         setLoading(false);
       }
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('AuthContext: Auth state changed event:', event, 'session:', session);
+        console.log('AuthContext: Auth state changed event:', event, 'session:', session ? 'exists' : 'null');
         
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
+          console.log('AuthContext: User session found, fetching account and profiles...');
           await fetchAccountAndProfiles(session.user.id);
         } else {
+          console.log('AuthContext: No user session, clearing state');
           setAccount(null);
           setStudentProfiles(null);
           setActiveStudentProfile(null);
