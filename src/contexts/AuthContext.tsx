@@ -5,6 +5,56 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 
+// Define types for the context
+interface AuthContextType {
+  user: User | null;
+  account: AccountProfile | null;
+  studentProfiles: StudentProfile[] | null;
+  activeStudentProfile: StudentProfile | null;
+  session: Session | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: AuthError | null }>;
+  signOut: () => Promise<void>;
+  refreshAccountAndProfiles: () => Promise<void>;
+  switchStudentProfile: (profileId: string) => Promise<void>;
+  createStudentProfile: (profileName: string, profileColor: string) => Promise<void>;
+  updateStudentProfile: (profileId: string, updates: Partial<StudentProfile>) => Promise<void>;
+  deleteStudentProfile: (profileId: string) => Promise<void>;
+}
+
+interface AccountProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: 'user' | 'admin' | 'student';
+  created_at: string;
+  plan_id: string | null;
+  credits_remaining: number;
+  onboarding_completed: boolean;
+  updated_at: string;
+  preferences: AccountPreferences | null;
+}
+
+interface StudentProfile {
+  id: string;
+  profile_name: string;
+  profile_color: string;
+  preferences: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+
+interface AccountPreferences {
+  activeProfileId?: string;
+  studentProfiles?: StudentProfile[];
+  [key: string]: any;
+}
+
+// Create the context
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
 // ... (rest of your imports and interfaces)
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -148,4 +198,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []); // Empty dependency array ensures this runs only once on mount
 
   // ... (rest of your AuthProvider code)
+
+  const value: AuthContextType = {
+    user,
+    account,
+    studentProfiles,
+    activeStudentProfile,
+    session,
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    refreshAccountAndProfiles,
+    switchStudentProfile,
+    createStudentProfile,
+    updateStudentProfile,
+    deleteStudentProfile,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Export the useAuth hook
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
