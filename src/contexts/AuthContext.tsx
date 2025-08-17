@@ -111,11 +111,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Create a more aggressive timeout wrapper
       const fetchWithTimeout = async () => {
         return new Promise(async (resolve, reject) => {
-          // Set a 30-second timeout
+          // Set a 3-second timeout for better user experience
           const timeoutId = setTimeout(() => {
-            console.log('AuthContext: Query timed out after 30 seconds');
-            reject(new Error('Query timeout after 30 seconds'));
-          }, 30000);
+            console.log('AuthContext: Query timed out after 3 seconds');
+            reject(new Error('Query timeout after 3 seconds'));
+          }, 3000);
           
           try {
             const { data: profileData, error: profileError } = await supabase
