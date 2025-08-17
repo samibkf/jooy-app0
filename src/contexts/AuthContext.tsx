@@ -108,27 +108,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('AuthContext: Attempting to fetch profile from Supabase...');
       
-      // Add timeout to prevent hanging queries
-      const queryPromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      // Create a more aggressive timeout wrapper
+      const fetchWithTimeout = async () => {
+        return new Promise(async (resolve, reject) => {
+          // Set a 5-second timeout
+          const timeoutId = setTimeout(() => {
+            console.log('AuthContext: Query timed out after 5 seconds');
+            reject(new Error('Query timeout after 5 seconds'));
+          }, 5000);
+          
+          try {
+            console.log('AuthContext: Starting Supabase query...');
+            const result = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', userId)
+              .single();
+            
+            clearTimeout(timeoutId);
+            console.log('AuthContext: Supabase query completed successfully');
+            resolve(result);
+          } catch (error) {
+            clearTimeout(timeoutId);
+            console.log('AuthContext: Supabase query failed with error:', error);
+            reject(error);
+          }
+        });
+      };
       
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Query timeout after 10 seconds')), 10000);
-      });
-      
-      const { data: profileData, error: profileError } = await Promise.race([
-        queryPromise,
-        timeoutPromise
-      ]) as any;
-
-      console.log('AuthContext: Supabase query completed. Error:', profileError, 'Data:', profileData);
-
-      if (profileError) {
-        console.error('AuthContext: Error fetching profile:', profileError);
-        
+      const { data: profileData, error: profileError } = await fetchWithTimeout() as any;
         // Handle timeout errors
         if (profileError.message?.includes('timeout')) {
           console.error('AuthContext: Query timed out, falling back to mock profile');
