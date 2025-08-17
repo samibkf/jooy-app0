@@ -72,70 +72,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchAccountAndProfiles = async (userId: string) => {
     try {
       // Fetch account data
-      const { data: accountData, error: accountError } = await supabase
-        .from('accounts')
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (accountError) {
-        console.error('Error fetching account:', accountError);
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
         setAccount(null);
         setStudentProfiles(null);
         setActiveStudentProfile(null);
         return;
       }
-      setAccount(accountData as AccountProfile);
+      setAccount(profileData as AccountProfile);
 
-      // Fetch student profiles for this account
-      const { data: studentProfilesData, error: studentProfilesError } = await supabase
-        .from('student_profiles')
-        .select('*')
-        .eq('account_id', userId)
-        .eq('is_active', true)
-        .order('last_accessed_at', { ascending: false, nullsFirst: false });
-
-      if (studentProfilesError) {
-        console.error('Error fetching student profiles:', studentProfilesError);
-        setStudentProfiles(null);
-        setActiveStudentProfile(null);
-        return;
-      }
-      setStudentProfiles(studentProfilesData as StudentProfile[]);
-
-      // Restore active student profile from localStorage
-      const storedActiveProfileId = localStorage.getItem('active_student_profile_id');
-      if (storedActiveProfileId) {
-        const foundProfile = (studentProfilesData as StudentProfile[]).find(p => p.id === storedActiveProfileId);
-        if (foundProfile) {
-          setActiveStudentProfile(foundProfile);
-          // Update last accessed time
-          await supabase.rpc('switch_to_profile', { profile_id: foundProfile.id });
-        } else {
-          localStorage.removeItem('active_student_profile_id');
-          // Auto-select first available profile if stored profile not found
-          if (studentProfilesData && studentProfilesData.length > 0) {
-            const firstProfile = studentProfilesData[0] as StudentProfile;
-            setActiveStudentProfile(firstProfile);
-            localStorage.setItem('active_student_profile_id', firstProfile.id);
-            // Update last accessed time
-            await supabase.rpc('switch_to_profile', { profile_id: firstProfile.id });
-          } else {
-            setActiveStudentProfile(null);
-          }
-        }
-      } else {
-        // Auto-select first available profile if no stored preference
-        if (studentProfilesData && studentProfilesData.length > 0) {
-          const firstProfile = studentProfilesData[0] as StudentProfile;
-          setActiveStudentProfile(firstProfile);
-          localStorage.setItem('active_student_profile_id', firstProfile.id);
-          // Update last accessed time
-          await supabase.rpc('switch_to_profile', { profile_id: firstProfile.id });
-        } else {
-          setActiveStudentProfile(null);
-        }
-      }
+      // For now, since we don't have student_profiles table, set a mock active profile
+      // This allows the user to proceed to the home page
+      setStudentProfiles([]);
+      setActiveStudentProfile({
+        id: userId,
+        account_id: userId,
+        profile_name: profileData.full_name || 'Default Profile',
+        profile_color: '#3b82f6',
+        preferences: {},
+        created_at: profileData.created_at,
+        updated_at: profileData.updated_at,
+        is_active: true
+      } as StudentProfile);
 
     } catch (error) {
       console.error('Error in fetchAccountAndProfiles:', error);
@@ -384,80 +348,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       const { error } = await supabase
-        .from('accounts')
+        .from('profiles')
         .update(updates)
         .eq('id', user.id);
-
-      if (error) {
-        toast({ title: "Account Update Error", description: error.message, variant: "destructive" });
-        return { error };
-      }
-
-      await refreshAccountAndProfiles();
-      toast({ title: "Account Updated", description: "Your account has been successfully updated." });
-      return { error: null };
-    } catch (error) {
-      const updateError = error as Error;
-      toast({ title: "Account Update Error", description: updateError.message, variant: "destructive" });
-      return { error: updateError };
-    }
-  };
-
-  // Select student profile
-  const selectStudentProfile = async (profileId: string) => {
-    if (!studentProfiles) return;
-    
-    const selected = studentProfiles.find(p => p.id === profileId);
-    if (selected) {
-      setActiveStudentProfile(selected);
-      localStorage.setItem('active_student_profile_id', selected.id);
-      
-      // Update last accessed time
-      await supabase.rpc('switch_to_profile', { profile_id: profileId });
-    }
-  };
-
-  // Create student profile
-  const createStudentProfile = async (profileName: string, avatarUrl?: string, profileColor?: string) => {
-    if (!user) return { error: new Error('No account logged in') };
-    
-    try {
-      const { data, error } = await supabase
-        .from('student_profiles')
-        .insert({
-          account_id: user.id,
-          profile_name: profileName,
-          avatar_url: avatarUrl,
-          profile_color: profileColor || '#3b82f6'
-        })
-        .select()
-        .single();
-
-      if (error) {
-        toast({ title: "Profile Creation Error", description: error.message, variant: "destructive" });
-        return { error };
-      }
-
-      await refreshAccountAndProfiles();
-      toast({ title: "Profile Created", description: `${profileName} has been added.` });
-      return { error: null, newProfile: data as StudentProfile };
-    } catch (error) {
-      const createError = error as Error;
-      toast({ title: "Profile Creation Error", description: createError.message, variant: "destructive" });
-      return { error: createError };
-    }
-  };
-
-  // Update student profile
-  const updateStudentProfile = async (profileId: string, updates: Partial<StudentProfile>) => {
-    if (!user) return { error: new Error('No account logged in') };
-    
-    try {
-      const { error } = await supabase
-        .from('student_profiles')
-        .update(updates)
-        .eq('id', profileId)
-        .eq('account_id', user.id);
 
       if (error) {
         toast({ title: "Profile Update Error", description: error.message, variant: "destructive" });
@@ -465,7 +358,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       await refreshAccountAndProfiles();
-      toast({ title: "Profile Updated", description: "Student profile updated successfully." });
+      toast({ title: "Profile Updated", description: "Your profile has been successfully updated." });
       return { error: null };
     } catch (error) {
       const updateError = error as Error;
@@ -474,36 +367,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Select student profile
+  const selectStudentProfile = async (profileId: string) => {
+    // Since we're using a mock profile system for now, just navigate
+    return;
+  };
+
+  // Create student profile
+  const createStudentProfile = async (profileName: string, avatarUrl?: string, profileColor?: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+    
+    // Mock implementation for now
+    toast({ title: "Feature Not Available", description: "Student profile creation is not yet implemented.", variant: "destructive" });
+    return { error: new Error('Feature not implemented') };
+  };
+
+  // Update student profile
+  const updateStudentProfile = async (profileId: string, updates: Partial<StudentProfile>) => {
+    if (!user) return { error: new Error('No user logged in') };
+    
+    // Mock implementation for now
+    toast({ title: "Feature Not Available", description: "Student profile editing is not yet implemented.", variant: "destructive" });
+    return { error: new Error('Feature not implemented') };
+  };
+
   // Delete student profile
   const deleteStudentProfile = async (profileId: string) => {
-    if (!user) return { error: new Error('No account logged in') };
+    if (!user) return { error: new Error('No user logged in') };
     
-    try {
-      const { error } = await supabase
-        .from('student_profiles')
-        .update({ is_active: false })
-        .eq('id', profileId)
-        .eq('account_id', user.id);
-
-      if (error) {
-        toast({ title: "Profile Deletion Error", description: error.message, variant: "destructive" });
-        return { error };
-      }
-
-      // If deleted profile was active, clear it
-      if (activeStudentProfile?.id === profileId) {
-        setActiveStudentProfile(null);
-        localStorage.removeItem('active_student_profile_id');
-      }
-
-      await refreshAccountAndProfiles();
-      toast({ title: "Profile Deleted", description: "Student profile has been removed." });
-      return { error: null };
-    } catch (error) {
-      const deleteError = error as Error;
-      toast({ title: "Profile Deletion Error", description: deleteError.message, variant: "destructive" });
-      return { error: deleteError };
-    }
+    // Mock implementation for now
+    toast({ title: "Feature Not Available", description: "Student profile deletion is not yet implemented.", variant: "destructive" });
+    return { error: new Error('Feature not implemented') };
   };
 
   const value: AuthContextType = {
