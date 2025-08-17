@@ -55,8 +55,6 @@ interface AccountPreferences {
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ... (rest of your imports and interfaces)
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [account, setAccount] = useState<AccountProfile | null>(null);
@@ -347,8 +345,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe();
     };
   }, []); // Empty dependency array ensures this runs only once on mount
-
-  // ... (rest of your AuthProvider code)
 
   const value: AuthContextType = {
     user,
