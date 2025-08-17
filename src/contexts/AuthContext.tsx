@@ -151,6 +151,157 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Sign in function
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { error };
+  };
+
+  // Sign up function
+  const signUp = async (email: string, password: string, fullName: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
+      },
+    });
+    return { error };
+  };
+
+  // Sign out function
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  // Switch student profile function
+  const switchStudentProfile = async (profileId: string) => {
+    if (!user || !account || !studentProfiles) return;
+
+    const targetProfile = studentProfiles.find(p => p.id === profileId);
+    if (!targetProfile) return;
+
+    const updatedPreferences = {
+      ...account.preferences,
+      activeProfileId: profileId,
+    };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ preferences: updatedPreferences })
+      .eq('id', user.id);
+
+    if (!error) {
+      setActiveStudentProfile(targetProfile);
+      setAccount({ ...account, preferences: updatedPreferences });
+    }
+  };
+
+  // Create student profile function
+  const createStudentProfile = async (profileName: string, profileColor: string) => {
+    if (!user || !account) return;
+
+    const newProfile: StudentProfile = {
+      id: uuidv4(),
+      profile_name: profileName,
+      profile_color: profileColor,
+      preferences: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_active: false,
+    };
+
+    const updatedProfiles = [...(studentProfiles || []), newProfile];
+    const updatedPreferences = {
+      ...account.preferences,
+      studentProfiles: updatedProfiles,
+    };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ preferences: updatedPreferences })
+      .eq('id', user.id);
+
+    if (!error) {
+      setStudentProfiles(updatedProfiles);
+      setAccount({ ...account, preferences: updatedPreferences });
+      toast({
+        title: "Profile Created",
+        description: `Student profile "${profileName}" has been created successfully.`,
+      });
+    }
+  };
+
+  // Update student profile function
+  const updateStudentProfile = async (profileId: string, updates: Partial<StudentProfile>) => {
+    if (!user || !account || !studentProfiles) return;
+
+    const updatedProfiles = studentProfiles.map(profile =>
+      profile.id === profileId
+        ? { ...profile, ...updates, updated_at: new Date().toISOString() }
+        : profile
+    );
+
+    const updatedPreferences = {
+      ...account.preferences,
+      studentProfiles: updatedProfiles,
+    };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ preferences: updatedPreferences })
+      .eq('id', user.id);
+
+    if (!error) {
+      setStudentProfiles(updatedProfiles);
+      setAccount({ ...account, preferences: updatedPreferences });
+      
+      // Update active profile if it's the one being updated
+      if (activeStudentProfile?.id === profileId) {
+        setActiveStudentProfile({ ...activeStudentProfile, ...updates, updated_at: new Date().toISOString() });
+      }
+    }
+  };
+
+  // Delete student profile function
+  const deleteStudentProfile = async (profileId: string) => {
+    if (!user || !account || !studentProfiles) return;
+
+    const updatedProfiles = studentProfiles.filter(profile => profile.id !== profileId);
+    
+    // If deleting the active profile, switch to the first remaining profile
+    let newActiveProfileId = account.preferences?.activeProfileId;
+    if (activeStudentProfile?.id === profileId && updatedProfiles.length > 0) {
+      newActiveProfileId = updatedProfiles[0].id;
+    }
+
+    const updatedPreferences = {
+      ...account.preferences,
+      studentProfiles: updatedProfiles,
+      activeProfileId: newActiveProfileId,
+    };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ preferences: updatedPreferences })
+      .eq('id', user.id);
+
+    if (!error) {
+      setStudentProfiles(updatedProfiles);
+      setAccount({ ...account, preferences: updatedPreferences });
+      
+      // Update active profile if needed
+      if (activeStudentProfile?.id === profileId) {
+        setActiveStudentProfile(updatedProfiles.length > 0 ? updatedProfiles[0] : null);
+      }
+    }
+  };
+
   // Initialize auth state
   useEffect(() => {
     console.log('AuthContext: useEffect mounted, initial loading set to true.');
