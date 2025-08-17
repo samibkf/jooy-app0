@@ -14,13 +14,16 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signInWithGoogle: () => Promise<{ error: AuthError | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: AuthError | null }>;
+  resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
+  updateAccount: (updates: Partial<AccountProfile>) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   refreshAccountAndProfiles: () => Promise<void>;
-  switchStudentProfile: (profileId: string) => Promise<void>;
-  createStudentProfile: (profileName: string, profileColor: string) => Promise<void>;
-  updateStudentProfile: (profileId: string, updates: Partial<StudentProfile>) => Promise<void>;
-  deleteStudentProfile: (profileId: string) => Promise<void>;
+  selectStudentProfile: (profileId: string) => Promise<void>;
+  createStudentProfile: (profileName: string, profileColor?: string) => Promise<{ error: AuthError | null }>;
+  updateStudentProfile: (profileId: string, updates: Partial<StudentProfile>) => Promise<{ error: AuthError | null }>;
+  deleteStudentProfile: (profileId: string) => Promise<{ error: AuthError | null }>;
 }
 
 interface AccountProfile {
@@ -158,6 +161,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error };
   };
 
+  // Sign in with Google function
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/profile-selection`
+      }
+    });
+    return { error };
+  };
+
   // Sign up function
   const signUp = async (email: string, password: string, fullName: string) => {
     const { error } = await supabase.auth.signUp({
@@ -172,13 +186,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error };
   };
 
+  // Reset password function
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`
+    });
+    return { error };
+  };
+
+  // Update account function
+  const updateAccount = async (updates: Partial<AccountProfile>) => {
+    if (!user) return { error: new Error('No user logged in') as AuthError };
+
+    const { error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id);
+
+    if (!error && account) {
+      setAccount({ ...account, ...updates });
+    }
+
+    return { error };
+  };
+
   // Sign out function
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  // Switch student profile function
-  const switchStudentProfile = async (profileId: string) => {
+  // Select student profile function
+  const selectStudentProfile = async (profileId: string) => {
     if (!user || !account || !studentProfiles) return;
 
     const targetProfile = studentProfiles.find(p => p.id === profileId);
@@ -201,8 +239,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Create student profile function
-  const createStudentProfile = async (profileName: string, profileColor: string) => {
-    if (!user || !account) return;
+  const createStudentProfile = async (profileName: string, profileColor: string = '#3b82f6') => {
+    if (!user || !account) return { error: new Error('No user logged in') as AuthError };
 
     const newProfile: StudentProfile = {
       id: uuidv4(),
@@ -233,11 +271,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         description: `Student profile "${profileName}" has been created successfully.`,
       });
     }
+
+    return { error };
   };
 
   // Update student profile function
   const updateStudentProfile = async (profileId: string, updates: Partial<StudentProfile>) => {
-    if (!user || !account || !studentProfiles) return;
+    if (!user || !account || !studentProfiles) return { error: new Error('No user logged in') as AuthError };
 
     const updatedProfiles = studentProfiles.map(profile =>
       profile.id === profileId
@@ -264,11 +304,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveStudentProfile({ ...activeStudentProfile, ...updates, updated_at: new Date().toISOString() });
       }
     }
+
+    return { error };
   };
 
   // Delete student profile function
   const deleteStudentProfile = async (profileId: string) => {
-    if (!user || !account || !studentProfiles) return;
+    if (!user || !account || !studentProfiles) return { error: new Error('No user logged in') as AuthError };
 
     const updatedProfiles = studentProfiles.filter(profile => profile.id !== profileId);
     
@@ -298,6 +340,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveStudentProfile(updatedProfiles.length > 0 ? updatedProfiles[0] : null);
       }
     }
+
+    return { error };
   };
 
   // Initialize auth state
@@ -354,10 +398,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session,
     loading,
     signIn,
+    signInWithGoogle,
     signUp,
+    resetPassword,
+    updateAccount,
     signOut,
     refreshAccountAndProfiles,
-    switchStudentProfile,
+    selectStudentProfile,
     createStudentProfile,
     updateStudentProfile,
     deleteStudentProfile,
