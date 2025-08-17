@@ -164,10 +164,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        fetchAccountAndProfiles(session.user.id);
+        fetchAccountAndProfiles(session.user.id).finally(() => {
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
     // Listen for auth changes
