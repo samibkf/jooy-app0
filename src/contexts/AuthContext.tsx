@@ -108,23 +108,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('AuthContext: Attempting to fetch profile from Supabase...');
       
-      const { data: profileData, error: profileError } = await supabase
+      // Add timeout to prevent hanging queries
+      const queryPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Query timeout after 10 seconds')), 10000);
+      });
+      
+      const { data: profileData, error: profileError } = await Promise.race([
+        queryPromise,
+        timeoutPromise
+      ]) as any;
 
       console.log('AuthContext: Supabase query completed. Error:', profileError, 'Data:', profileData);
 
       if (profileError) {
         console.error('AuthContext: Error fetching profile:', profileError);
         
+        // Handle timeout errors
+        if (profileError.message?.includes('timeout')) {
+          console.error('AuthContext: Query timed out, falling back to mock profile');
+          // Create a temporary profile to prevent app hanging
+          const tempProfile: AccountProfile = {
+            id: userId,
+            email: user?.email || 'user@example.com',
+            full_name: user?.user_metadata?.full_name || user?.user_metadata?.name || 'User',
+            role: 'user',
+            created_at: new Date().toISOString(),
+            plan_id: null,
+            credits_remaining: 100,
+            onboarding_completed: false,
+            updated_at: new Date().toISOString(),
+            preferences: null
+          };
+          
+          const tempStudentProfile: StudentProfile = {
+            id: uuidv4(),
+            profile_name: tempProfile.full_name?.split(' ')[0] || 'Student',
+            profile_color: '#3b82f6',
+            preferences: {},
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_active: true,
+          };
+          
+          setAccount(tempProfile);
+          setStudentProfiles([tempStudentProfile]);
+          setActiveStudentProfile(tempStudentProfile);
+          console.log('AuthContext: Temporary profile setup completed due to timeout');
+          return;
+        }
+        
         // If profile doesn't exist, this might be a new user - try to create one
         if (profileError.code === 'PGRST116') {
           console.log('AuthContext: Profile not found, attempting to create new profile...');
           
           // Get user data from auth
-          const { data: { user: authUser } } = await supabase.auth.getUser();
+          const { data: { user: authUser }, error: userError } = await supabase.auth.getUser();
+          
+          if (userError) {
+            console.error('AuthContext: Error getting user data:', userError);
+            setAccount(null);
+            setStudentProfiles(null);
+            setActiveStudentProfile(null);
+            return;
+          }
           
           if (authUser) {
             const newProfileData = {
@@ -139,51 +191,137 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             console.log('AuthContext: Creating new profile with data:', newProfileData);
             
-            const { data: createdProfile, error: createError } = await supabase
-              .from('profiles')
-              .insert(newProfileData)
-              .select()
-              .single();
+            try {
+              const createProfilePromise = supabase
+                .from('profiles')
+                .insert(newProfileData)
+                .select()
+                .single();
+              
+              const createTimeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Create profile timeout after 10 seconds')), 10000);
+              });
+              
+              const { data: createdProfile, error: createError } = await Promise.race([
+                createProfilePromise,
+                createTimeoutPromise
+              ]) as any;
             
-            if (createError) {
-              console.error('AuthContext: Error creating profile:', createError);
-              setAccount(null);
-              setStudentProfiles(null);
-              setActiveStudentProfile(null);
+              if (createError) {
+                console.error('AuthContext: Error creating profile:', createError);
+                
+                // If creation fails, use a temporary profile
+                const tempProfile: AccountProfile = {
+                  ...newProfileData,
+                  preferences: {
+                    activeProfileId: uuidv4(),
+                    studentProfiles: [{
+                      id: uuidv4(),
+                      profile_name: newProfileData.full_name?.split(' ')[0] || 'Student',
+                      profile_color: '#3b82f6',
+                      preferences: {},
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
+                      is_active: true,
+                    }]
+                  }
+                };
+                
+                setAccount(tempProfile);
+                setStudentProfiles(tempProfile.preferences.studentProfiles);
+                setActiveStudentProfile(tempProfile.preferences.studentProfiles[0]);
+                console.log('AuthContext: Using temporary profile due to creation error');
+                return;
+              }
+            
+              console.log('AuthContext: New profile created:', createdProfile);
+            
+              // Create default student profile
+              const defaultStudentProfile: StudentProfile = {
+                id: uuidv4(),
+                profile_name: createdProfile.full_name?.split(' ')[0] || 'Student',
+                profile_color: '#3b82f6',
+                preferences: {},
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                is_active: true,
+              };
+            
+              // Update the profile with the default student profile
+              const updatedPreferences = {
+                activeProfileId: defaultStudentProfile.id,
+                studentProfiles: [defaultStudentProfile]
+              };
+            
+              try {
+                await supabase
+                  .from('profiles')
+                  .update({ preferences: updatedPreferences })
+                  .eq('id', userId);
+                console.log('AuthContext: Profile preferences updated successfully');
+              } catch (updateError) {
+                console.warn('AuthContext: Failed to update profile preferences, continuing with local state:', updateError);
+              }
+            
+              setAccount({ ...createdProfile, preferences: updatedPreferences } as AccountProfile);
+              setStudentProfiles([defaultStudentProfile]);
+              setActiveStudentProfile(defaultStudentProfile);
+              console.log('AuthContext: New user setup completed successfully');
+              return;
+            } catch (createTimeoutError) {
+              console.error('AuthContext: Profile creation timed out:', createTimeoutError);
+              
+              // Use temporary profile if creation times out
+              const tempProfile: AccountProfile = {
+                ...newProfileData,
+                preferences: {
+                  activeProfileId: uuidv4(),
+                  studentProfiles: [{
+                    id: uuidv4(),
+                    profile_name: newProfileData.full_name?.split(' ')[0] || 'Student',
+                    profile_color: '#3b82f6',
+                    preferences: {},
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    is_active: true,
+                  }]
+                }
+              };
+              
+              setAccount(tempProfile);
+              setStudentProfiles(tempProfile.preferences.studentProfiles);
+              setActiveStudentProfile(tempProfile.preferences.studentProfiles[0]);
+              console.log('AuthContext: Using temporary profile due to creation timeout');
               return;
             }
-            
-            console.log('AuthContext: New profile created:', createdProfile);
-            
-            // Create default student profile
-            const defaultStudentProfile: StudentProfile = {
+          }
+        }
+        
+        // For any other error, use temporary profile
+        console.error('AuthContext: Unhandled profile error, using temporary profile');
+        const tempProfile: AccountProfile = {
+          id: userId,
+          email: user?.email || 'user@example.com',
+          full_name: user?.user_metadata?.full_name || user?.user_metadata?.name || 'User',
+          role: 'user',
+          created_at: new Date().toISOString(),
+          plan_id: null,
+          credits_remaining: 100,
+          onboarding_completed: false,
+          updated_at: new Date().toISOString(),
+          preferences: {
+            activeProfileId: uuidv4(),
+            studentProfiles: [{
               id: uuidv4(),
-              profile_name: createdProfile.full_name?.split(' ')[0] || 'Student',
+              profile_name: user?.user_metadata?.full_name?.split(' ')[0] || 'Student',
               profile_color: '#3b82f6',
               preferences: {},
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
               is_active: true,
-            };
-            
-            // Update the profile with the default student profile
-            const updatedPreferences = {
-              activeProfileId: defaultStudentProfile.id,
-              studentProfiles: [defaultStudentProfile]
-            };
-            
-            await supabase
-              .from('profiles')
-              .update({ preferences: updatedPreferences })
-              .eq('id', userId);
-            
-            setAccount({ ...createdProfile, preferences: updatedPreferences } as AccountProfile);
-            setStudentProfiles([defaultStudentProfile]);
-            setActiveStudentProfile(defaultStudentProfile);
-            console.log('AuthContext: New user setup completed successfully');
-            return;
+            }]
           }
-        }
+        };
         
         setAccount(null);
         setStudentProfiles(null);
@@ -218,11 +356,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           // Update preferences to set this as active
           const updatedPreferences = { ...userPreferences, activeProfileId: currentActiveStudentProfile.id };
-          await supabase
-            .from('profiles')
-            .update({ preferences: updatedPreferences })
-            .eq('id', userId);
-          console.log('AuthContext: Updated active profile in database');
+          try {
+            await supabase
+              .from('profiles')
+              .update({ preferences: updatedPreferences })
+              .eq('id', userId);
+            console.log('AuthContext: Updated active profile in database');
+          } catch (updateError) {
+            console.warn('AuthContext: Failed to update active profile, continuing with local state:', updateError);
+          }
         }
       } else {
         console.log('AuthContext: No student profiles found, creating default profile');
@@ -247,11 +389,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           studentProfiles: currentStudentProfiles 
         };
         
-        await supabase
-          .from('profiles')
-          .update({ preferences: updatedPreferences })
-          .eq('id', userId);
-        console.log('AuthContext: Saved default profile to database');
+        try {
+          await supabase
+            .from('profiles')
+            .update({ preferences: updatedPreferences })
+            .eq('id', userId);
+          console.log('AuthContext: Saved default profile to database');
+        } catch (updateError) {
+          console.warn('AuthContext: Failed to save default profile, continuing with local state:', updateError);
+        }
       }
       
       setStudentProfiles(currentStudentProfiles);
@@ -260,9 +406,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     } catch (error) {
       console.error('AuthContext: Error in fetchAccountAndProfiles catch block:', error);
-      setAccount(null);
-      setStudentProfiles(null);
-      setActiveStudentProfile(null);
+      
+      // Instead of setting everything to null, create a fallback profile
+      console.log('AuthContext: Creating fallback profile due to error');
+      const fallbackProfile: AccountProfile = {
+        id: userId,
+        email: user?.email || 'user@example.com',
+        full_name: user?.user_metadata?.full_name || user?.user_metadata?.name || 'User',
+        role: 'user',
+        created_at: new Date().toISOString(),
+        plan_id: null,
+        credits_remaining: 100,
+        onboarding_completed: false,
+        updated_at: new Date().toISOString(),
+        preferences: {
+          activeProfileId: uuidv4(),
+          studentProfiles: [{
+            id: uuidv4(),
+            profile_name: user?.user_metadata?.full_name?.split(' ')[0] || 'Student',
+            profile_color: '#3b82f6',
+            preferences: {},
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_active: true,
+          }]
+        }
+      };
+      
+      setAccount(fallbackProfile);
+      setStudentProfiles(fallbackProfile.preferences.studentProfiles);
+      setActiveStudentProfile(fallbackProfile.preferences.studentProfiles[0]);
+      console.log('AuthContext: Fallback profile setup completed');
     }
   };
 
