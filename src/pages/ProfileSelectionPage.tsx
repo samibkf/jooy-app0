@@ -42,12 +42,12 @@ const ProfileSelectionPage: React.FC = () => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Redirect if already has active profile
+  // Auto-open create dialog for new users without profiles
   useEffect(() => {
-    if (user && activeStudentProfile && !loading && !showCreateDialog && !showManageDialog && !editingProfile) {
-      navigate('/home', { replace: true });
+    if (!loading && studentProfiles !== null && studentProfiles.length === 0) {
+      setShowCreateDialog(true);
     }
-  }, [user, activeStudentProfile, loading, navigate, showCreateDialog, showManageDialog, editingProfile]);
+  }, [loading, studentProfiles]);
 
   const handleProfileSelect = async (profileId: string) => {
     if (loading) return;
