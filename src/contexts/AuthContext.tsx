@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session, AuthError } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 
@@ -17,7 +18,6 @@ interface AccountProfile {
 
 interface StudentProfile {
   id: string;
-  account_id: string;
   profile_name: string;
   avatar_url?: string;
   profile_color: string;
@@ -26,6 +26,11 @@ interface StudentProfile {
   updated_at: string;
   last_accessed_at?: string;
   is_active: boolean;
+}
+
+interface AccountPreferences {
+  activeProfileId?: string;
+  studentProfiles: StudentProfile[];
 }
 
 interface AuthContextType {
@@ -43,10 +48,10 @@ interface AuthContextType {
   updateAccount: (updates: Partial<AccountProfile>) => Promise<{ error: Error | null }>;
   refreshAccountAndProfiles: () => Promise<void>;
   
-  // Student profile management
-  selectStudentProfile: (profileId: string) => Promise<void>;
-  createStudentProfile: (profileName: string, avatarUrl?: string, profileColor?: string) => Promise<{ error: Error | null; newProfile?: StudentProfile }>;
-  updateStudentProfile: (profileId: string, updates: Partial<StudentProfile>) => Promise<{ error: Error | null }>;
+  // Student profile management (now fully implemented)
+  selectStudentProfile: (profileId: string) => Promise<{ error: Error | null }>;
+  createStudentProfile: (profileName: string, profileColor?: string) => Promise<{ error: Error | null; newProfile?: StudentProfile }>;
+  updateStudentProfile: (profileId: string, updates: Partial<Omit<StudentProfile, 'id' | 'created_at' | 'updated_at' | 'preferences' | 'is_active'>>) => Promise<{ error: Error | null }>;
   deleteStudentProfile: (profileId: string) => Promise<{ error: Error | null }>;
 }
 
@@ -87,19 +92,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setAccount(profileData as AccountProfile);
 
-      // For now, since we don't have student_profiles table, set a mock active profile
-      // This allows the user to proceed to the home page
-      setStudentProfiles([]);
-      setActiveStudentProfile({
-        id: userId,
-        account_id: userId,
-        profile_name: profileData.full_name || 'Default Profile',
-        profile_color: '#3b82f6',
-        preferences: {},
-        created_at: profileData.created_at,
-        updated_at: profileData.updated_at,
-        is_active: true
-      } as StudentProfile);
+      // Handle student profiles stored in preferences
+      let currentStudentProfiles: StudentProfile[] = [];
+      let currentActiveStudentProfile: StudentProfile | null = null;
+      const userPreferences = profileData.preferences as AccountPreferences | null;
+
+      if (userPreferences && Array.isArray(userPreferences.studentProfiles) && userPreferences.studentProfiles.length > 0) {
+        currentStudentProfiles = userPreferences.studentProfiles;
+        
+        // Try to find the active profile
+        if (userPreferences.activeProfileId) {
+          currentActiveStudentProfile = currentStudentProfiles.find(p => p.id === userPreferences.activeProfileId) || null;
+        }
+        
+        // If no active profile found or activeProfileId is missing, default to the first one
+        if (!currentActiveStudentProfile) {
+          currentActiveStudentProfile = currentStudentProfiles[0];
+          // Update preferences to set this as active
+          await supabase
+            .from('profiles')
+            .update({ preferences: { ...userPreferences, activeProfileId: currentActiveStudentProfile.id } })
+            .eq('id', userId);
+        }
+      } else {
+        // If no student profiles exist, create a default one
+        const defaultProfile: StudentProfile = {
+          id: uuidv4(),
+          profile_name: profileData.full_name?.split(' ')[0] || 'Student',
+          profile_color: '#3b82f6', // Default color
+          preferences: {}, // Empty preferences for student profile
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          is_active: true,
+        };
+        currentStudentProfiles = [defaultProfile];
+        currentActiveStudentProfile = defaultProfile;
+        
+        await supabase
+          .from('profiles')
+          .update({ preferences: { activeProfileId: defaultProfile.id, studentProfiles: currentStudentProfiles } })
+          .eq('id', userId);
+      }
+      setStudentProfiles(currentStudentProfiles);
+      setActiveStudentProfile(currentActiveStudentProfile);
 
     } catch (error) {
       console.error('Error in fetchAccountAndProfiles:', error);
@@ -197,6 +232,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           fetchAccountAndProfiles(data.user.id);
         }, 1000);
       }
+      
+      // If user is created but not immediately signed in (e.g., email confirmation required),
+      // ensure a default profile is set up for when they do sign in.
+      // This is handled by fetchAccountAndProfiles when they eventually log in.
+      // However, if we want to ensure it's there immediately for some flows,
+      // we might need a server-side function or a more complex client-side setup.
+      // For now, relying on fetchAccountAndProfiles on login/session change is sufficient.
+
 
       return { error: null };
     } catch (error) {
@@ -369,35 +412,173 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Select student profile
   const selectStudentProfile = async (profileId: string) => {
-    // Since we're using a mock profile system for now, just navigate
-    return;
+    if (!user || !account || !studentProfiles) {
+      return { error: new Error('User not logged in or profiles not loaded.') };
+    }
+
+    const selectedProfile = studentProfiles.find(p => p.id === profileId);
+    if (!selectedProfile) {
+      return { error: new Error('Selected profile not found.') };
+    }
+
+    try {
+      const updatedStudentProfiles = studentProfiles.map(p => 
+        p.id === profileId ? { ...p, last_accessed_at: new Date().toISOString() } : p
+      );
+
+      const newPreferences: AccountPreferences = {
+        activeProfileId: profileId,
+        studentProfiles: updatedStudentProfiles,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ preferences: newPreferences })
+        .eq('id', user.id);
+
+      if (error) {
+        toast({ title: "Profile Selection Error", description: error.message, variant: "destructive" });
+        return { error };
+      }
+
+      // Update local state immediately for responsiveness
+      setStudentProfiles(updatedStudentProfiles);
+      setActiveStudentProfile(selectedProfile);
+      
+      toast({ title: "Profile Switched", description: `Switched to ${selectedProfile.profile_name}.` });
+      return { error: null };
+    } catch (error) {
+      const selectError = error as Error;
+      toast({ title: "Profile Selection Error", description: selectError.message, variant: "destructive" });
+      return { error: selectError };
+    }
   };
 
   // Create student profile
-  const createStudentProfile = async (profileName: string, avatarUrl?: string, profileColor?: string) => {
-    if (!user) return { error: new Error('No user logged in') };
-    
-    // Mock implementation for now
-    toast({ title: "Feature Not Available", description: "Student profile creation is not yet implemented.", variant: "destructive" });
-    return { error: new Error('Feature not implemented') };
+  const createStudentProfile = async (profileName: string, profileColor?: string) => {
+    if (!user || !account) {
+      return { error: new Error('User not logged in.') };
+    }
+
+    try {
+      const newProfile: StudentProfile = {
+        id: uuidv4(),
+        profile_name: profileName,
+        profile_color: profileColor || '#3b82f6', // Default color if not provided
+        preferences: {}, // Student profile specific preferences
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_active: true, // New profiles are active by default
+      };
+
+      const currentPreferences = (account.preferences || {}) as AccountPreferences;
+      const updatedStudentProfiles = [...(currentPreferences.studentProfiles || []), newProfile];
+
+      const newPreferences: AccountPreferences = {
+        activeProfileId: newProfile.id, // Set new profile as active
+        studentProfiles: updatedStudentProfiles,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ preferences: newPreferences })
+        .eq('id', user.id);
+
+      if (error) {
+        toast({ title: "Profile Creation Error", description: error.message, variant: "destructive" });
+        return { error };
+      }
+
+      await refreshAccountAndProfiles(); // Refresh context state
+      toast({ title: "Profile Created", description: `${profileName} has been added.` });
+      return { error: null, newProfile };
+    } catch (error) {
+      const createError = error as Error;
+      toast({ title: "Profile Creation Error", description: createError.message, variant: "destructive" });
+      return { error: createError };
+    }
   };
 
   // Update student profile
-  const updateStudentProfile = async (profileId: string, updates: Partial<StudentProfile>) => {
-    if (!user) return { error: new Error('No user logged in') };
-    
-    // Mock implementation for now
-    toast({ title: "Feature Not Available", description: "Student profile editing is not yet implemented.", variant: "destructive" });
-    return { error: new Error('Feature not implemented') };
+  const updateStudentProfile = async (profileId: string, updates: Partial<Omit<StudentProfile, 'id' | 'created_at' | 'updated_at' | 'preferences' | 'is_active'>>) => {
+    if (!user || !account || !studentProfiles) {
+      return { error: new Error('User not logged in or profiles not loaded.') };
+    }
+
+    try {
+      const updatedStudentProfiles = studentProfiles.map(p => 
+        p.id === profileId ? { ...p, ...updates, updated_at: new Date().toISOString() } : p
+      );
+
+      const currentPreferences = (account.preferences || {}) as AccountPreferences;
+      const newPreferences: AccountPreferences = {
+        ...currentPreferences,
+        studentProfiles: updatedStudentProfiles,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ preferences: newPreferences })
+        .eq('id', user.id);
+
+      if (error) {
+        toast({ title: "Profile Update Error", description: error.message, variant: "destructive" });
+        return { error };
+      }
+
+      await refreshAccountAndProfiles(); // Refresh context state
+      toast({ title: "Profile Updated", description: "Profile has been updated." });
+      return { error: null };
+    } catch (error) {
+      const updateError = error as Error;
+      toast({ title: "Profile Update Error", description: updateError.message, variant: "destructive" });
+      return { error: updateError };
+    }
   };
 
   // Delete student profile
   const deleteStudentProfile = async (profileId: string) => {
-    if (!user) return { error: new Error('No user logged in') };
-    
-    // Mock implementation for now
-    toast({ title: "Feature Not Available", description: "Student profile deletion is not yet implemented.", variant: "destructive" });
-    return { error: new Error('Feature not implemented') };
+    if (!user || !account || !studentProfiles) {
+      return { error: new Error('User not logged in or profiles not loaded.') };
+    }
+
+    if (studentProfiles.length <= 1) {
+      toast({ title: "Deletion Error", description: "Cannot delete the last profile.", variant: "destructive" });
+      return { error: new Error('Cannot delete the last profile.') };
+    }
+
+    try {
+      const updatedStudentProfiles = studentProfiles.filter(p => p.id !== profileId);
+      let newActiveProfileId = account.preferences?.activeProfileId;
+
+      // If the deleted profile was active, set another one as active
+      if (newActiveProfileId === profileId) {
+        newActiveProfileId = updatedStudentProfiles[0]?.id || undefined;
+      }
+
+      const newPreferences: AccountPreferences = {
+        activeProfileId: newActiveProfileId,
+        studentProfiles: updatedStudentProfiles,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ preferences: newPreferences })
+        .eq('id', user.id);
+
+      if (error) {
+        toast({ title: "Profile Deletion Error", description: error.message, variant: "destructive" });
+        return { error };
+      }
+
+      await refreshAccountAndProfiles(); // Refresh context state
+      toast({ title: "Profile Deleted", description: "Profile has been deleted." });
+      return { error: null };
+    } catch (error) {
+      const deleteError = error as Error;
+      toast({ title: "Profile Deletion Error", description: deleteError.message, variant: "destructive" });
+      return { error: deleteError };
+    }
   };
 
   const value: AuthContextType = {
