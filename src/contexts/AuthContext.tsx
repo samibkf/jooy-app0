@@ -113,10 +113,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await supabase.rpc('switch_to_profile', { profile_id: foundProfile.id });
         } else {
           localStorage.removeItem('active_student_profile_id');
-          setActiveStudentProfile(null);
+          // Auto-select first available profile if stored profile not found
+          if (studentProfilesData && studentProfilesData.length > 0) {
+            const firstProfile = studentProfilesData[0] as StudentProfile;
+            setActiveStudentProfile(firstProfile);
+            localStorage.setItem('active_student_profile_id', firstProfile.id);
+            // Update last accessed time
+            await supabase.rpc('switch_to_profile', { profile_id: firstProfile.id });
+          } else {
+            setActiveStudentProfile(null);
+          }
         }
       } else {
-        setActiveStudentProfile(null);
+        // Auto-select first available profile if no stored preference
+        if (studentProfilesData && studentProfilesData.length > 0) {
+          const firstProfile = studentProfilesData[0] as StudentProfile;
+          setActiveStudentProfile(firstProfile);
+          localStorage.setItem('active_student_profile_id', firstProfile.id);
+          // Update last accessed time
+          await supabase.rpc('switch_to_profile', { profile_id: firstProfile.id });
+        } else {
+          setActiveStudentProfile(null);
+        }
       }
 
     } catch (error) {
